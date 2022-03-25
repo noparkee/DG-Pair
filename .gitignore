@@ -1,0 +1,23 @@
+.ipynb_checkpoints/
+data/
+output/
+__pycache__/
+data code/
+model code/
+pycocoevalcap/
+pycocotools/
+
+**.swp
+**.txt
+
+src/tmp.py
+src/data2.py
+preprocess_data.py
+
+in_evaluate_0.txt
+in_evaluate_1.txt
+in_evaluate_2.txt
+in_evaluate_3.txt
+
+token.pkl
+token.pkl
