@@ -179,7 +179,8 @@ class GCN(torch.nn.Module):
         self.n_masking = n_masking
         #self.masking_adj = torch.ones(6-n_masking, 6-n_masking, requires_grad=False).cuda().float()            ### 이러면 이게 학습될 것 같은데?
         #self.adj = torch.ones(6, 6, requires_grad=False).cuda().float()
-        self.gcn_network = GCNNet(n_block=3, n_layer=2, in_dim=1024, hidden_dim=512, out_dim=256)
+        self.gcn = GCNNet(n_block=3, n_layer=2, in_dim=1024, hidden_dim=512, out_dim=256, n_feat=6)
+        self.masking_gcn = GCNNet(n_block=3, n_layer=2, in_dim=1024, hidden_dim=512, out_dim=256, n_feat=4)
 
         ### for Projection
         embed_size, hidden_size, perceptron_size = model_cfg.explainer_embed_size, model_cfg.explainer_hidden_size, model_cfg.perceptron_size
@@ -226,8 +227,8 @@ class GCN(torch.nn.Module):
             dis_loss += -(log_ps.sum(dim=1) * rewards).sum() / len(y)
 
             ###
-            img_features = self.img_perceptron(image_features)
-            txt_features = self.txt_perceptron(torch.squeeze(states1[0]))
+            img_features = self.img_perceptron(image_features)              # (32, perceptron_size)
+            txt_features = self.txt_perceptron(torch.squeeze(states1[0]))   # (32, perceptron_size)
 
             ### make gcn features without maksing
             if feat == None:
@@ -259,10 +260,15 @@ class GCN(torch.nn.Module):
         for i in range(len(random_adj)):
             random_adj[i][i] = 1
 
+        print(feat.shape)
+        input()
+
         #out = self.gcn_network(feat, self.adj)
         #masking_out = self.gcn_network(masking_feat, self.masking_adj)
-        out = self.gcn_network(feat, adj)
-        masking_out = self.gcn_network(feat, random_adj)
+        #out = self.gcn_network(feat, adj)
+        #masking_out = self.gcn_network(feat, random_adj)
+        out = self.gcn(feat, adj)
+        masking_out = self.masking_gcn(feat, random_adj)
 
         cls_loss /= num_domains
         rel_loss /= num_domains

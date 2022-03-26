@@ -164,18 +164,18 @@ class SentenceClassifier(torch.nn.Module):
     reference: https://github.com/heartcored98/Standalone-DeepLearning/blob/master/Lec9/Lab11_logP_Prediction_with_GCN.ipynb'''
 
 class GCNLayer(nn.Module):
-    def __init__(self, in_dim, out_dim, act=None, bn=False):
+    def __init__(self, in_dim, out_dim, n_feat, act=None, bn=False):
         super(GCNLayer, self).__init__()
         self.use_bn = bn
         self.linear = nn.Linear(in_dim, out_dim)
         self.activation = act
+        self.bn = nn.BatchNorm1d(n_feat)
         
     def forward(self, x, adj):
         out = self.linear(x)
         out = torch.matmul(adj, out)
         if self.use_bn:
-            bn = nn.BatchNorm1d(x.shape[1]).cuda()
-            out = bn(out)
+            out = self.bn(out)
         if self.activation != None:
             out = self.activation(out)
 
@@ -225,6 +225,7 @@ class GCNBlock(nn.Module):
         for i in range(n_layer):
             self.layers.append(GCNLayer(in_dim if i==0 else hidden_dim,
                                         out_dim if i==n_layer-1 else hidden_dim,
+                                        n_feat,
                                         nn.ReLU() if i!=n_layer-1 else None,
                                         bn))
         self.relu = nn.ReLU()
@@ -263,7 +264,7 @@ class ReadOut(nn.Module):
         return out
 
 class GCNNet(nn.Module):
-    def __init__(self, n_block, n_layer, in_dim, hidden_dim, out_dim, n_feat=4, bn=True, sc='gsc'):
+    def __init__(self, n_block, n_layer, in_dim, hidden_dim, out_dim, n_feat=6, bn=True, sc='gsc'):
         super(GCNNet, self).__init__()
         self.blocks = nn.ModuleList()
         for i in range(n_block):
