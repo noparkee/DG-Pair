@@ -174,6 +174,11 @@ class GCN(torch.nn.Module):
         
         self.explainer = Explainer(model_cfg, vocab, num_classes, self.featurizer.module.n_outputs)
         self.sentence_classifier = SentenceClassifier(model_cfg, vocab, num_classes)
+
+        ### for Projection
+        embed_size, hidden_size, perceptron_size = model_cfg.explainer_embed_size, model_cfg.explainer_hidden_size, model_cfg.perceptron_size
+        self.img_perceptron = nn.Linear(self.featurizer.module.n_outputs, perceptron_size)      # 512
+        self.txt_perceptron = nn.Linear(embed_size, perceptron_size)
         
         ### for gcn
         self.n_masking = n_masking
@@ -182,10 +187,7 @@ class GCN(torch.nn.Module):
         self.gcn = GCNNet(n_block=3, n_layer=2, in_dim=1024, hidden_dim=512, out_dim=256, n_feat=6)
         self.masking_gcn = GCNNet(n_block=3, n_layer=2, in_dim=1024, hidden_dim=512, out_dim=256, n_feat=4)
 
-        ### for Projection
-        embed_size, hidden_size, perceptron_size = model_cfg.explainer_embed_size, model_cfg.explainer_hidden_size, model_cfg.perceptron_size
-        self.img_perceptron = nn.Linear(self.featurizer.module.n_outputs, perceptron_size)      # 512
-        self.txt_perceptron = nn.Linear(embed_size, perceptron_size)
+        self.gcn_classifier = nn.Linear(perceptron_size, num_classes)
 
         #self.loss_names = ["loss", "cls_loss", "rel_loss", "dis_loss", "sd_loss", "ed_loss"]
         self.loss_names = ["loss", "cls_loss", "rel_loss", "dis_loss", "gcn_loss"]
@@ -208,7 +210,7 @@ class GCN(torch.nn.Module):
         remove_idx = random.sample([0, 1, 2, 3, 4, 5], self.n_masking)
         feat, masking_feat = None, None
 
-        cls_loss, rel_loss, dis_loss, gcn_loss = 0, 0, 0, 0
+        cls_loss, rel_loss, dis_loss, sd_loss, gcn_cls_loss, gcn_feat_loss = 0, 0, 0, 0, 0, 0
         for i in range(num_domains):
             x, ti, tt, l, ml, f = xs[i], tis[i], tts[i], ls[i], mls[i], fs[i]
             
@@ -226,6 +228,8 @@ class GCN(torch.nn.Module):
             rewards = F.softmax(sc_outputs, dim=1).gather(1, y.view(-1, 1)).squeeze()
             dis_loss += -(log_ps.sum(dim=1) * rewards).sum() / len(y)
 
+            #sd_loss += 0.1 * (cls_outputs ** 2).mean()
+
             ###
             img_features = self.img_perceptron(image_features)              # (32, perceptron_size)
             txt_features = self.txt_perceptron(torch.squeeze(states1[0]))   # (32, perceptron_size)
@@ -239,29 +243,11 @@ class GCN(torch.nn.Module):
                 feat = torch.cat([feat, torch.unsqueeze(img_features, dim=1)], dim=1)
                 feat = torch.cat([feat, torch.unsqueeze(txt_features, dim=1)], dim=1)
 
-            ### make gcn features with masking
-            if not 2*i in remove_idx:
-                if masking_feat == None:
-                    masking_feat = img_features
-                elif masking_feat.shape == img_features.shape:
-                    masking_feat = torch.stack([masking_feat, img_features], dim=1)
-                else:
-                    masking_feat = torch.cat([masking_feat, torch.unsqueeze(img_features, dim=1)], dim=1)
-            if not 2*i+1 in remove_idx:
-                if masking_feat == None:
-                    masking_feat = txt_features
-                elif masking_feat.shape == txt_features.shape:
-                    masking_feat = torch.stack([masking_feat, txt_features], dim=1)
-                else:
-                    masking_feat = torch.cat([masking_feat, torch.unsqueeze(txt_features, dim=1)], dim=1)
 
         adj = torch.ones(6, 6).cuda().float()
         random_adj = torch.randint(2, (6, 6)).cuda().float()
         for i in range(len(random_adj)):
             random_adj[i][i] = 1
-
-        print(feat.shape)
-        input()
 
         #out = self.gcn_network(feat, self.adj)
         #masking_out = self.gcn_network(masking_feat, self.masking_adj)
@@ -269,20 +255,20 @@ class GCN(torch.nn.Module):
         #masking_out = self.gcn_network(feat, random_adj)
         out = self.gcn(feat, adj)
         masking_out = self.masking_gcn(feat, random_adj)
+        gcn_cls_loss += self.gcn_classifier(out) + self.gcn_classifier(masking_out)
+        gcn_feat_loss = F.mse(out, masking_out)
 
         cls_loss /= num_domains
         rel_loss /= num_domains
         dis_loss /= num_domains
-        #gcn_loss = ((out - masking_out)**2).norm()
-        gcn_loss = 10 * F.mse_loss(out, masking_out)
-        
-        loss = cls_loss + rel_loss + dis_loss + gcn_loss #+ sd_loss + ed_loss
+
+        loss = cls_loss + rel_loss + dis_loss + gcn_cls_loss + gcn_feat_loss#+ sd_loss + ed_loss
 
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
         
-        return OrderedDict({'loss': loss, 'cls_loss': cls_loss, "rel_loss": rel_loss, "dis_loss": dis_loss, "gcn_loss": gcn_loss })#, "sd_loss": sd_loss, "ed_loss": ed_loss})
+        return OrderedDict({'loss': loss, 'cls_loss': cls_loss, "rel_loss": rel_loss, "dis_loss": dis_loss, "gcn_cls_loss": gcn_cls_loss, "gcn_feat_loss": gcn_feat_loss })#, "sd_loss": sd_loss, "ed_loss": ed_loss})
     
     def evaluate(self, minibatch, test_env):
         xs, y, tis, tts, ls , mls, fs = minibatch
