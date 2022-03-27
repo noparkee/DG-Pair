@@ -184,8 +184,8 @@ class GCN(torch.nn.Module):
         self.n_masking = n_masking
         #self.masking_adj = torch.ones(6-n_masking, 6-n_masking, requires_grad=False).cuda().float()            ### 이러면 이게 학습될 것 같은데?
         #self.adj = torch.ones(6, 6, requires_grad=False).cuda().float()
-        self.gcn = GCNNet(n_block=3, n_layer=2, in_dim=1024, hidden_dim=512, out_dim=256, n_feat=6)
-        self.masking_gcn = GCNNet(n_block=3, n_layer=2, in_dim=1024, hidden_dim=512, out_dim=256, n_feat=4)
+        self.gcn = GCNNet(n_block=1, n_layer=1, in_dim=1024, hidden_dim=512, out_dim=256, n_feat=6)
+        #self.masking_gcn = GCNNet(n_block=3, n_layer=2, in_dim=1024, hidden_dim=512, out_dim=256, n_feat=4)
 
         self.gcn_classifier = nn.Linear(perceptron_size, num_classes)
 
@@ -254,7 +254,8 @@ class GCN(torch.nn.Module):
         #out = self.gcn_network(feat, adj)
         #masking_out = self.gcn_network(feat, random_adj)
         out = self.gcn(feat, adj)
-        masking_out = self.masking_gcn(feat, random_adj)
+        masking_out = self.gcn(feat, random_adj)
+
         gcn_cls_loss += self.gcn_classifier(out) + self.gcn_classifier(masking_out)
         gcn_feat_loss = F.mse(out, masking_out)
 
