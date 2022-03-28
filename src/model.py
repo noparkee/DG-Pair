@@ -190,7 +190,7 @@ class GCN(torch.nn.Module):
         self.gcn_classifier = nn.Linear(256, num_classes)   # gcn의 out_dim
 
         #self.loss_names = ["loss", "cls_loss", "rel_loss", "dis_loss", "sd_loss", "ed_loss"]
-        self.loss_names = ["loss", "cls_loss", "rel_loss", "dis_loss", "gcn_loss"]
+        self.loss_names = ["loss", "cls_loss", "rel_loss", "dis_loss", "gcn_cls_loss", "gcn_feat_loss"]
 
         self.optimizer = get_optimizer(self.parameters())
     
@@ -259,7 +259,7 @@ class GCN(torch.nn.Module):
         gcn_cls_out = self.gcn_classifier(out)
         gcn_cls_out2 = self.gcn_classifier(masking_out)
 
-        gcn_cls_loss = F.cross_entropy(gcn_cls_out, y) + F.cross_entropy(gcn_cls_out2, y)
+        gcn_cls_loss = (F.cross_entropy(gcn_cls_out, y) + F.cross_entropy(gcn_cls_out2, y)) / 2
         gcn_feat_loss = F.mse_loss(gcn_cls_out, gcn_cls_out2)
         
         cls_loss /= num_domains

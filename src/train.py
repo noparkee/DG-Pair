@@ -40,13 +40,16 @@ class Trainer():
 
         self.logger_eval.acc_update({name: [correct, total]})
         
-    def save_model(self, step, save_prefix):
+    def save_model(self, step, save_prefix, test_env):
         # save a state_dict to checkpoint """
         if save_prefix is None: return
-        elif not os.path.exists(os.path.join(save_prefix, "checkpoints/")):
-            os.makedirs(os.path.join(save_prefix, "checkpoints/"), exist_ok=True)
+        #elif not os.path.exists(os.path.join(save_prefix, "checkpoints/")):
+        #    os.makedirs(os.path.join(save_prefix, "checkpoints/"), exist_ok=True)
 
-        torch.save(self.model.state_dict(), os.path.join(save_prefix, "checkpoints/%d.pt" % step))
+        #torch.save(self.model.state_dict(), os.path.join(save_prefix, "checkpoints/%d.pt" % step))
+        
+        # 마지막 하나만 저장
+        torch.save(self.model.state_dict(), os.path.join(save_prefix, "testenv_" + str(test_env) + "_checkpoints.pt"))
 
     def load_model(self, checkpoint, output):
         # load a state_dict from checkpoint """

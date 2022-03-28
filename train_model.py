@@ -27,7 +27,7 @@ def main():
     model_cfg = config.ModelConfig(args["model_config"])
     # output, writer, save_prefix = set_output(args, "train_model_log")
     output, writer, save_prefix = set_output(args, "testenv%d_train_model_log" % args['test_env'], args['test_env'])
-    
+
     device, data_parallel = torch.device("cuda" if torch.cuda.is_available() else "cpu"), torch.cuda.device_count() > 1
     config.print_configs(args, [model_cfg], device, output)
     set_seeds(args["model_config"], args["test_env"], args["trial_seed"])
@@ -78,8 +78,11 @@ def main():
                     if B % 5 == 0: print('# step [{}/{}] {} {:.1%}'.format(step + 1, N_STEPS, eval_name, B / len(iterator_eval)), end='\r', file=sys.stderr)
                 print(' ' * 150, end='\r', file=sys.stderr)
 
-            trainer.save_model(step + 1, save_prefix)
+            #trainer.save_model(step + 1, save_prefix, args["test_env"])
             trainer.log(step + 1, output, writer)
+
+    # 마지막 하나만 저장
+    trainer.save_model(step + 1, save_prefix, args["test_env"])
 
     end = Print('end training a model', output)
     Print(" ".join(['elapsed time:', str(end - start)]), output, newline=True)
