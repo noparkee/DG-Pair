@@ -44,7 +44,8 @@ def main():
     print('text_flag: ' + model_cfg.text_feature)
 
     ## make description files
-    preprocess_data_gnn.make_description(path='data/CUB-DG/', trial_seed=seed)
+    if model_cfg.text_feature:
+        preprocess_data_gnn.make_description(path='data/CUB-DG/', trial_seed=seed)
 
     ## Loading datasets
     start = Print(" ".join(['start loading datasets']), output)
