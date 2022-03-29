@@ -243,18 +243,24 @@ class GCN(torch.nn.Module):
                 feat = torch.cat([feat, torch.unsqueeze(img_features, dim=1)], dim=1)
                 feat = torch.cat([feat, torch.unsqueeze(txt_features, dim=1)], dim=1)
 
+        # 방법 1. adjaceney matrix에 random masking
+        #adj = torch.ones(6, 6).cuda().float()
+        #random_adj = torch.randint(2, (6, 6)).cuda().float()
+        #for i in range(len(random_adj)):
+        #    random_adj[i][i] = 1
+        #out = self.gcn(feat, adj)
+        #masking_out = self.gcn(feat, random_adj)
 
+        # 방법 2. feature 자체를 random masking
         adj = torch.ones(6, 6).cuda().float()
-        random_adj = torch.randint(2, (6, 6)).cuda().float()
-        for i in range(len(random_adj)):
-            random_adj[i][i] = 1
-
-        #out = self.gcn_network(feat, self.adj)
-        #masking_out = self.gcn_network(masking_feat, self.masking_adj)
-        #out = self.gcn_network(feat, adj)
-        #masking_out = self.gcn_network(feat, random_adj)
         out = self.gcn(feat, adj)
-        masking_out = self.gcn(feat, random_adj)
+        masking_feat = feat.clone()
+        for i in range(feat.shape[0]):
+            masking_idcs = random.sample(range(6), 2)
+            for mi in masking_idcs:
+                masking_feat[i, mi] = 0.
+        masking_out = self.gcn(feat, adj)
+
 
         gcn_cls_out = self.gcn_classifier(out)
         gcn_cls_out2 = self.gcn_classifier(masking_out)
