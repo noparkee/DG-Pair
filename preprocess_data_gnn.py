@@ -9,14 +9,7 @@ from src.data import Vocabulary
 
 def main():
     path = 'data/CUB-DG/'
-
-    print("Making description files ...")
-    description = get_data(path)
-
-    train, val, eval = split_description(description)
-    descriptions = merge_descriptions(train, val, eval)
-
-    descriptions.to_pickle(os.path.join(path, 'dggnn_descriptions.pkl'))
+    description, descriptions = make_description(path)
     
     # total = len(descriptions)
     # n = int(total * 0.2)
@@ -37,6 +30,21 @@ def main():
     print("Making a vocab file ...")
     vocab = build_vocab(description)
     Vocabulary.save(vocab, os.path.join(path, "vocab_nlk.pkl"))
+
+
+
+def make_description(path, trial_seed=0):
+
+    print("Making description files ...")
+    description = get_data(path)
+
+    train, val, eval = split_description(trial_seed, description)
+    descriptions = merge_descriptions(train, val, eval)
+
+    descriptions.to_pickle(os.path.join(path, 'dggnn_descriptions.pkl'))
+
+    return description, descriptions
+
 
 def get_data(path):
     category_ids, categories, images, captions = [], [], [], []
@@ -68,8 +76,7 @@ def seed_hash(num):
     return int(hashlib.md5(args_str.encode("utf-8")).hexdigest(), 16) % (2**31)
 
 
-def split_description(description):
-    trial_seed = 0
+def split_description(trial_seed, description):
 
     total = len(description)
     n = int(total * 0.2)

@@ -57,6 +57,8 @@ def set_seeds(model, test_env, seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+    return seed
+
 
 def set_output(args, string, test_env):
     """ set output configurations """

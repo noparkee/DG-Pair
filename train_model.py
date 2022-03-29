@@ -12,6 +12,7 @@ from src.train import Trainer
 from src.utils import Print, set_seeds, set_output, ErrorReportBot
 
 import traceback
+import preprocess_data_gnn
 
 
 
@@ -30,7 +31,7 @@ def main():
 
     device, data_parallel = torch.device("cuda" if torch.cuda.is_available() else "cpu"), torch.cuda.device_count() > 1
     config.print_configs(args, [model_cfg], device, output)
-    set_seeds(args["model_config"], args["test_env"], args["trial_seed"])
+    seed = set_seeds(args["model_config"], args["test_env"], args["trial_seed"])
     for i in range(torch.cuda.device_count()):
         torch.zeros((1)).to(torch.device("cuda:%d" % i))
 
@@ -41,6 +42,9 @@ def main():
 
     text_flag = (args["model_config"].find('GVE') != -1) or (args["model_config"].find('GCN') != -1)
     print('text_flag: ' + str(text_flag))
+
+    ## make description files
+    preprocess_data_gnn.make_description(path='data/CUB-DG/', trial_seed=seed)
 
     ## Loading datasets
     start = Print(" ".join(['start loading datasets']), output)
