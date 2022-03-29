@@ -34,6 +34,7 @@ class ModelConfig():
                 elif key == "sc_hidden_size":           self.sc_hidden_size = value
                 elif key == "perceptron_size":          self.perceptron_size = value
                 elif key == "attn":                     self.attn = value
+                elif key == "text_feature":             self.text_feature = value
                 else: sys.exit("# ERROR: invalid key [%s] in model-config file" % key)
 
     def get_config(self):
