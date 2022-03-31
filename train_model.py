@@ -1,6 +1,7 @@
 import os
 import sys
 import argparse
+import traceback
 os.environ["MKL_THREADING_LAYER"] = "GNU"
 
 import torch
@@ -11,7 +12,6 @@ from src.model import get_model
 from src.train import Trainer
 from src.utils import Print, set_seeds, set_output, ErrorReportBot
 
-import traceback
 import preprocess_data_gnn
 
 
@@ -58,8 +58,8 @@ def main():
     model = get_model(model_cfg, datasets[0].vocab)
 
     # Activate Multi-GPUs.
-    if (device.type == 'cuda') and (torch.cuda.device_count() > 1):
-        model = torch.nn.DataParallel(model, device_ids=list(range(torch.cuda.device_count())))
+    #if (device.type == 'cuda') and (torch.cuda.device_count() > 1):
+    #    model = torch.nn.DataParallel(model, device_ids=list(range(torch.cuda.device_count())))
 
     trainer = Trainer(model, device, data_parallel)
     end = Print('end setting trainer configurations', output)
@@ -68,7 +68,7 @@ def main():
     ## train a model
     N_STEPS, CHECKPOINT_FREQ = 5000, 300
     start = Print('start training a model', output)
-    trainer.headline("step", model.module.loss_names, eval_names, output)
+    trainer.headline("step", model.loss_names, eval_names, output)
     for step in range(N_STEPS):
         ### train
         minibatches = next(iterators_train)

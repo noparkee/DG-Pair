@@ -12,7 +12,7 @@ class Trainer():
     """ train / eval helper class """
     def __init__(self, model, device, data_parallel):
         self.model = model.to(device)
-        # self.model.set_parallel(data_parallel)
+        self.model.set_parallel(data_parallel)
         self.device = device
         self.data_parallel = data_parallel
 
@@ -25,7 +25,7 @@ class Trainer():
         minibatches = set_device(minibatches, self.device)
 
         self.model.train()
-        loss_dict = self.model.module.update(minibatches, test_env)
+        loss_dict = self.model.update(minibatches, test_env)
 
         # logging
         self.logger_train.loss_update(loss_dict)
@@ -36,7 +36,7 @@ class Trainer():
 
         self.model.eval()
         with torch.no_grad():
-            correct, total = self.model.module.evaluate(minibatch, test_env)
+            correct, total = self.model.evaluate(minibatch, test_env)
 
         self.logger_eval.acc_update({name: [correct, total]})
         

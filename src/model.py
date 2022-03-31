@@ -15,7 +15,7 @@ import random
 
 
 
-MODELS = ['GVE', 'ERM', 'ERM_GVE']
+MODELS = ['GVE', 'ERM', 'ERM_GVE', 'GCN']
 
 
 def get_model(model_cfg, vocab, num_classes=200):
@@ -40,27 +40,29 @@ class GVE(torch.nn.Module):
     def __init__(self, model_cfg, vocab, num_classes):
         super(GVE, self).__init__()
         
-        self.featurizer = torch.nn.DataParallel(ResNet(model_cfg.attn))
-        self.classifier = nn.Linear(self.featurizer.module.n_outputs, num_classes)
+        self.featurizer = ResNet(model_cfg.attn)
+        self.classifier = nn.Linear(self.featurizer.n_outputs, num_classes)
         
-        self.explainer = Explainer(model_cfg, vocab, num_classes, self.featurizer.module.n_outputs)
+        self.explainer = Explainer(model_cfg, vocab, num_classes, self.featurizer.n_outputs)
         self.sentence_classifier = SentenceClassifier(model_cfg, vocab, num_classes)
         
         ### for Projection
         embed_size, hidden_size, perceptron_size = model_cfg.explainer_embed_size, model_cfg.explainer_hidden_size, model_cfg.perceptron_size
-        self.img_perceptron = nn.Linear(self.featurizer.module.n_outputs, perceptron_size)      # 512
+        self.img_perceptron = nn.Linear(self.featurizer.n_outputs, perceptron_size)      # 512
         self.txt_perceptron = nn.Linear(embed_size, perceptron_size)
 
-        self.loss_names = ["loss", "cls_loss", "rel_loss", "dis_loss", "sd_loss", "ed_loss"]
+        #self.loss_names = ["loss", "cls_loss", "rel_loss", "dis_loss", "sd_loss", "ed_loss"]
+        self.loss_names = ["loss", "cls_loss", "rel_loss", "dis_loss"]
 
         ### for Attention
         self.attn = model_cfg.attn
-        self.query_conv = nn.Conv2d(in_channels = 2048, out_channels = 2048//8, kernel_size=1)
-        self.key_conv  = nn.Conv2d(in_channels = 2048, out_channels = 2048//8, kernel_size=1) 
-        self.value_conv   = nn.Conv2d(in_channels = 2048, out_channels = 2048, kernel_size=1)         
-        self.gamma = nn.Parameter(torch.zeros(1))
-        self.softmax  = nn.Softmax(dim=-1)
-        self.avgpool = nn.AdaptiveAvgPool2d((1,1))
+        if self.attn:
+            self.query_conv = nn.Conv2d(in_channels = 2048, out_channels = 2048//8, kernel_size=1)
+            self.key_conv  = nn.Conv2d(in_channels = 2048, out_channels = 2048//8, kernel_size=1) 
+            self.value_conv   = nn.Conv2d(in_channels = 2048, out_channels = 2048, kernel_size=1)         
+            self.gamma = nn.Parameter(torch.zeros(1))
+            self.softmax  = nn.Softmax(dim=-1)
+            self.avgpool = nn.AdaptiveAvgPool2d((1,1))
 
         self.optimizer = get_optimizer(self.parameters())
 
@@ -97,7 +99,7 @@ class GVE(torch.nn.Module):
         cls_loss, rel_loss, dis_loss, sd_loss, ed_loss = 0, 0, 0, 0, 0
         for i in range(num_domains):
             x, ti, tt, l, ml, f = xs[i], tis[i], tts[i], ls[i], mls[i], fs[i]
-
+            
             if self.attn:
                 image_before_pooling = self.featurizer(x)
                 image_features = self.add_attention(image_before_pooling)
@@ -107,39 +109,40 @@ class GVE(torch.nn.Module):
             cls_outputs = self.classifier(image_features)
             cls_loss += F.cross_entropy(cls_outputs, y)
             
-            exp_outputs = self.explainer(ti, l, image_features, cls_outputs)
+            l = l.cpu()
+            exp_outputs = self.explainer(ti, l, ml, image_features, cls_outputs)
             tt = pack_padded_sequence(tt, l, batch_first=True, enforce_sorted=False)
             rel_loss += F.cross_entropy(exp_outputs, tt[0])
 
-            sampled_t, log_ps, sampled_l, states1 = self.explainer.sample(image_features, cls_outputs)
+            sampled_t, log_ps, sampled_l, states1 = self.explainer.module.sample(image_features, cls_outputs)
             sc_outputs = self.sentence_classifier(sampled_t, sampled_l)
             rewards = F.softmax(sc_outputs, dim=1).gather(1, y.view(-1, 1)).squeeze()
             dis_loss += -(log_ps.sum(dim=1) * rewards).sum() / len(y)
 
             ### sd loss
-            sd_loss += 0.1 * (cls_outputs ** 2).mean()
+            #sd_loss += 0.1 * (cls_outputs ** 2).mean()
 
             ### projection loss
-            text_features = torch.squeeze(states1[0])
-            txt_features = self.txt_perceptron(text_features)
-            img_features = self.img_perceptron(image_features)
-            img_features = img_features / img_features.norm(dim=1, keepdim=True)
-            txt_features = txt_features / txt_features.norm(dim=1, keepdim=True)
-            ed_loss += F.mse_loss(img_features, txt_features)
+            #text_features = torch.squeeze(states1[0])
+            #txt_features = self.txt_perceptron(text_features)
+            #img_features = self.img_perceptron(image_features)
+            #img_features = img_features / img_features.norm(dim=1, keepdim=True)
+            #txt_features = txt_features / txt_features.norm(dim=1, keepdim=True)
+            #ed_loss += F.mse_loss(img_features, txt_features)
         
         cls_loss /= num_domains
         rel_loss /= num_domains
         dis_loss /= num_domains
-        sd_loss /= num_domains
-        ed_loss /= num_domains
+        #sd_loss /= num_domains
+        #ed_loss /= num_domains
 
-        loss = cls_loss + rel_loss + dis_loss + sd_loss + ed_loss
+        loss = cls_loss + rel_loss + dis_loss #+ sd_loss + ed_loss
 
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
-        return OrderedDict({'loss': loss, 'cls_loss': cls_loss, "rel_loss": rel_loss, "dis_loss": dis_loss, "sd_loss": sd_loss, "ed_loss": ed_loss})
+        return OrderedDict({'loss': loss, 'cls_loss': cls_loss, "rel_loss": rel_loss, "dis_loss": dis_loss})#, "sd_loss": sd_loss, "ed_loss": ed_loss})
 
     def evaluate(self, minibatch, test_env):
         xs, y, tis, tts, ls , mls, fs = minibatch
@@ -163,29 +166,38 @@ class GVE(torch.nn.Module):
         total = float(len(x))
         
         return correct, total
+    
+    def set_parallel(self, data_parallel):
+        if data_parallel:
+            self.featurizer = nn.DataParallel(self.featurizer)
+            self.classifier = nn.DataParallel(self.classifier)
+
+            self.explainer = nn.DataParallel(self.explainer)
+            self.sentence_classifier = nn.DataParallel(self.sentence_classifier)
+
+            self.img_perceptron = nn.DataParallel(self.img_perceptron)
+            self.txt_perceptron = nn.DataParallel(self.txt_perceptron)
+
 
 
 class GCN(torch.nn.Module):
     def __init__(self, model_cfg, vocab, num_classes, n_masking=2):
         super(GCN, self).__init__()
         
-        self.featurizer = torch.nn.DataParallel(ResNet(model_cfg.attn))
-        self.classifier = nn.Linear(self.featurizer.module.n_outputs, num_classes)
+        self.featurizer = ResNet(model_cfg.attn)
+        self.classifier = nn.Linear(self.featurizer.n_outputs, num_classes)
         
-        self.explainer = Explainer(model_cfg, vocab, num_classes, self.featurizer.module.n_outputs)
+        self.explainer = Explainer(model_cfg, vocab, num_classes, self.featurizer.n_outputs)
         self.sentence_classifier = SentenceClassifier(model_cfg, vocab, num_classes)
 
         ### for Projection
         embed_size, hidden_size, perceptron_size = model_cfg.explainer_embed_size, model_cfg.explainer_hidden_size, model_cfg.perceptron_size
-        self.img_perceptron = nn.Linear(self.featurizer.module.n_outputs, perceptron_size)      # 512
+        self.img_perceptron = nn.Linear(self.featurizer.n_outputs, perceptron_size)      # 512
         self.txt_perceptron = nn.Linear(embed_size, perceptron_size)
         
         ### for gcn
         self.n_masking = n_masking
-        #self.masking_adj = torch.ones(6-n_masking, 6-n_masking, requires_grad=False).cuda().float()            ### 이러면 이게 학습될 것 같은데?
-        #self.adj = torch.ones(6, 6, requires_grad=False).cuda().float()
         self.gcn = GCNNet(n_block=1, n_layer=1, in_dim=1024, hidden_dim=512, out_dim=256, n_feat=6)
-        #self.masking_gcn = GCNNet(n_block=3, n_layer=2, in_dim=1024, hidden_dim=512, out_dim=256, n_feat=4)
 
         self.gcn_classifier = nn.Linear(256, num_classes)   # gcn의 out_dim
 
@@ -219,11 +231,12 @@ class GCN(torch.nn.Module):
             cls_outputs = self.classifier(image_features)
             cls_loss += F.cross_entropy(cls_outputs, y)
             
-            exp_outputs = self.explainer(ti, l, image_features, cls_outputs)
+            l = l.cpu()
+            exp_outputs = self.explainer(ti, l, ml, image_features, cls_outputs)
             tt = pack_padded_sequence(tt, l, batch_first=True, enforce_sorted=False)
             rel_loss += F.cross_entropy(exp_outputs, tt[0])
 
-            sampled_t, log_ps, sampled_l, states1 = self.explainer.sample(image_features, cls_outputs)      # states1[0]: (1, B, 1024)
+            sampled_t, log_ps, sampled_l, states1 = self.explainer.module.sample(image_features, cls_outputs)      # states1[0]: (1, B, 1024)
             sc_outputs = self.sentence_classifier(sampled_t, sampled_l)
             rewards = F.softmax(sc_outputs, dim=1).gather(1, y.view(-1, 1)).squeeze()
             dis_loss += -(log_ps.sum(dim=1) * rewards).sum() / len(y)
@@ -243,23 +256,23 @@ class GCN(torch.nn.Module):
                 feat = torch.cat([feat, torch.unsqueeze(img_features, dim=1)], dim=1)
                 feat = torch.cat([feat, torch.unsqueeze(txt_features, dim=1)], dim=1)
 
-        # 방법 1. adjaceney matrix에 random masking
-        #adj = torch.ones(6, 6).cuda().float()
-        #random_adj = torch.randint(2, (6, 6)).cuda().float()
-        #for i in range(len(random_adj)):
-        #    random_adj[i][i] = 1
-        #out = self.gcn(feat, adj)
-        #masking_out = self.gcn(feat, random_adj)
-
-        # 방법 2. feature 자체를 random masking
-        adj = torch.ones(6, 6).cuda().float()
+        # 방법 1. adjaceney matrix에 random masking -> GCN
+        adj = torch.ones(feat.shape[0], 6, 6).cuda().float()
+        random_adj = torch.randint(2, (feat.shape[0], 6, 6)).cuda().float()
+        for i in range(feat.shape[1]):
+            random_adj[:, i, i] = 1
         out = self.gcn(feat, adj)
-        masking_feat = feat.clone()
-        for i in range(feat.shape[0]):
-            masking_idcs = random.sample(range(6), 2)
-            for mi in masking_idcs:
-                masking_feat[i, mi] = 0.
-        masking_out = self.gcn(feat, adj)
+        masking_out = self.gcn(feat, random_adj)
+
+        # 방법 2. feature 자체를 random masking -> GCN2
+        #adj = torch.ones(6, 6).cuda().float()      # adj의 shape이 [6, 6]이 맞나? [32, 6, 6] 되어야 할 것 같아서..
+        #out = self.gcn(feat, adj)
+        #masking_feat = feat.clone()
+        #for i in range(feat.shape[0]):
+        #    masking_idcs = random.sample(range(6), 2)
+        #    for mi in masking_idcs:
+        #        masking_feat[i, mi] = 0.
+        #masking_out = self.gcn(feat, adj)
 
 
         gcn_cls_out = self.gcn_classifier(out)
@@ -292,14 +305,30 @@ class GCN(torch.nn.Module):
         total = float(len(x))
         
         return correct, total
+    
+    def set_parallel(self, data_parallel):
+        if data_parallel:
+            self.featurizer = nn.DataParallel(self.featurizer)
+            self.classifier = nn.DataParallel(self.classifier)
+
+            self.explainer = nn.DataParallel(self.explainer)
+            self.sentence_classifier = nn.DataParallel(self.sentence_classifier)
+
+            self.img_perceptron = nn.DataParallel(self.img_perceptron)
+            self.txt_perceptron = nn.DataParallel(self.txt_perceptron)
+
+            self.gcn = nn.DataParallel(self.gcn)
+            self.gcn_classifier = nn.DataParallel(self.gcn_classifier)
+
+
 
 ###
 class ERM(torch.nn.Module):
     """ Empirical Risk Minimization (ERM) """
     def __init__(self, model_cfg, vocab, num_classes):
         super(ERM, self).__init__()
-        self.featurizer = torch.nn.DataParallel(ResNet())
-        self.classifier = nn.Linear(self.featurizer.module.n_outputs, num_classes)
+        self.featurizer = ResNet()
+        self.classifier = nn.Linear(self.featurizer.n_outputs, num_classes)
 
         self.loss_names = ["loss", "cls_loss"]
         self.optimizer = get_optimizer(self.parameters())
@@ -341,3 +370,8 @@ class ERM(torch.nn.Module):
         total = float(len(x))
 
         return correct, total
+
+    def set_parallel(self, data_parallel):
+        if data_parallel:
+            self.featurizer = nn.DataParallel(self.featurizer)
+            self.classifier = nn.DataParallel(self.classifier)

@@ -213,7 +213,7 @@ def collate_fn(data):
         
     lengths, texts_input, texts_target, max_lengths = [], [], [], []
     for i in range(len(texts)):
-        length = [len(cap) - 1 for cap in texts[i]]
+        length = torch.tensor([len(cap) - 1 for cap in texts[i]], dtype=torch.int64)
         lengths.append(length)
         max_length = torch.tensor([max(length) for cap in texts[i]], dtype=torch.int64)
         max_lengths.append(max_length)

@@ -68,16 +68,20 @@ class Explainer(torch.nn.Module):
         self.start_word = torch.tensor([vocab('<start>')], dtype=torch.long)
         self.end_word = torch.tensor([vocab('<end>')], dtype=torch.long)
 
-    def forward(self, x, l, image_features, cls_outputs):
+    def forward(self, x, l, ml, image_features, cls_outputs):
         """ generate explanation sentences from image_features and cls_outputs with teacher forcing """
+        l = l.cpu()
+        self.lstm1.flatten_parameters()
+        self.lstm2.flatten_parameters()
+
         image_features = self.image_embed(image_features).unsqueeze(1).expand(-1, x.size(1), -1)
         cls_outputs = cls_outputs.unsqueeze(1).expand(-1, x.size(1), -1)
-
+        
         x = self.text_embed(x)
         x = pack_padded_sequence(x, l, batch_first=True, enforce_sorted=False)
         x, _ = self.lstm1(x)
+        x, _ = pad_packed_sequence(x, total_length=ml[0], batch_first=True)
 
-        x, _ = pad_packed_sequence(x, batch_first=True)
         x = torch.cat((x, image_features, cls_outputs), 2)
         x = pack_padded_sequence(x, l, batch_first=True, enforce_sorted=False)
         x, _ = self.lstm2(x)
@@ -148,6 +152,9 @@ class SentenceClassifier(torch.nn.Module):
 
     def forward(self, x, l):
         """ classify given sentences """
+        l = l.cpu()
+        self.lstm.flatten_parameters()
+
         x = self.text_embed(x)
         x = pack_padded_sequence(x, l, batch_first=True, enforce_sorted=False)
         x, _ = self.lstm(x)
