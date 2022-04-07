@@ -15,7 +15,7 @@ import random
 
 
 
-MODELS = ['GVE', 'ERM', 'ERM_GVE', 'GCN']
+MODELS = ['GVE', 'ERM', 'GCN']
 
 
 def get_model(model_cfg, vocab, num_classes=200):
@@ -51,8 +51,8 @@ class GVE(torch.nn.Module):
         self.img_perceptron = nn.Linear(self.featurizer.module.n_outputs, perceptron_size)      # 512
         self.txt_perceptron = nn.Linear(embed_size, perceptron_size)
 
-        self.loss_names = ["loss", "cls_loss", "rel_loss", "dis_loss", "sd_loss"]#, "ed_loss"]
-        #self.loss_names = ["loss", "cls_loss", "rel_loss", "dis_loss"]
+        #self.loss_names = ["loss", "cls_loss", "rel_loss", "dis_loss", "sd_loss"]#, "ed_loss"]
+        self.loss_names = ["loss", "cls_loss", "rel_loss", "dis_loss"]
 
         ### for Attention
         self.attn = model_cfg.attn
@@ -120,7 +120,7 @@ class GVE(torch.nn.Module):
             dis_loss += -(log_ps.sum(dim=1) * rewards).sum() / len(y)
 
             ### sd loss
-            sd_loss += 0.1 * (cls_outputs ** 2).mean()
+            #sd_loss += 0.1 * (cls_outputs ** 2).mean()
 
             ### projection loss
             #text_features = torch.squeeze(states1[0])
@@ -133,16 +133,16 @@ class GVE(torch.nn.Module):
         cls_loss /= num_domains
         rel_loss /= num_domains
         dis_loss /= num_domains
-        sd_loss /= num_domains
+        #sd_loss /= num_domains
         #ed_loss /= num_domains
 
-        loss = cls_loss + rel_loss + dis_loss + sd_loss #+ ed_loss
+        loss = cls_loss + rel_loss + dis_loss #+ sd_loss #+ ed_loss
 
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
-        return OrderedDict({'loss': loss, 'cls_loss': cls_loss, "rel_loss": rel_loss, "dis_loss": dis_loss, "sd_loss": sd_loss})#, "ed_loss": ed_loss})
+        return OrderedDict({'loss': loss, 'cls_loss': cls_loss, "rel_loss": rel_loss, "dis_loss": dis_loss})#, "sd_loss": sd_loss})#, "ed_loss": ed_loss})
 
     def evaluate(self, minibatch, test_env):
         xs, y, tis, tts, ls , mls, fs = minibatch
@@ -202,7 +202,7 @@ class GCN(torch.nn.Module):
         self.gcn_classifier = nn.Linear(256, num_classes)   # gcn의 out_dim
 
         #self.loss_names = ["loss", "cls_loss", "rel_loss", "dis_loss", "sd_loss", "ed_loss"]
-        self.loss_names = ["loss", "cls_loss", "rel_loss", "dis_loss", "gcn_cls_loss", "gcn_feat_loss", "sd_loss"]
+        self.loss_names = ["loss", "cls_loss", "rel_loss", "dis_loss", "gcn_cls_loss", "gcn_feat_loss"]
 
         self.optimizer = get_optimizer(self.parameters())
     
@@ -241,7 +241,7 @@ class GCN(torch.nn.Module):
             rewards = F.softmax(sc_outputs, dim=1).gather(1, y.view(-1, 1)).squeeze()
             dis_loss += -(log_ps.sum(dim=1) * rewards).sum() / len(y)
 
-            sd_loss += 0.1 * (cls_outputs ** 2).mean()
+            #sd_loss += 0.1 * (cls_outputs ** 2).mean()
 
             ###
             img_features = self.img_perceptron(image_features)              # (32, perceptron_size)
@@ -284,13 +284,13 @@ class GCN(torch.nn.Module):
         rel_loss /= num_domains
         dis_loss /= num_domains
 
-        loss = cls_loss + rel_loss + dis_loss + gcn_cls_loss + gcn_feat_loss + sd_loss #+ ed_loss
+        loss = cls_loss + rel_loss + dis_loss + gcn_cls_loss + gcn_feat_loss #+ sd_loss #+ ed_loss
 
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
         
-        return OrderedDict({'loss': loss, 'cls_loss': cls_loss, "rel_loss": rel_loss, "dis_loss": dis_loss, "gcn_cls_loss": gcn_cls_loss, "gcn_feat_loss": gcn_feat_loss, "sd_loss": sd_loss})#, "ed_loss": ed_loss})
+        return OrderedDict({'loss': loss, 'cls_loss': cls_loss, "rel_loss": rel_loss, "dis_loss": dis_loss, "gcn_cls_loss": gcn_cls_loss, "gcn_feat_loss": gcn_feat_loss})#, "sd_loss": sd_loss})#, "ed_loss": ed_loss})
     
     def evaluate(self, minibatch, test_env):
         xs, y, tis, tts, ls , mls, fs = minibatch
