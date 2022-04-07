@@ -12,7 +12,7 @@ class Trainer():
     """ train / eval helper class """
     def __init__(self, model, device, data_parallel):
         self.model = model.to(device)
-        self.model.set_parallel(data_parallel)
+        #self.model.set_parallel(data_parallel)
         self.device = device
         self.data_parallel = data_parallel
 

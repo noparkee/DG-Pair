@@ -71,8 +71,8 @@ class Explainer(torch.nn.Module):
     def forward(self, x, l, ml, image_features, cls_outputs):
         """ generate explanation sentences from image_features and cls_outputs with teacher forcing """
         l = l.cpu()
-        self.lstm1.flatten_parameters()
-        self.lstm2.flatten_parameters()
+        #self.lstm1.flatten_parameters()
+        #self.lstm2.flatten_parameters()
 
         image_features = self.image_embed(image_features).unsqueeze(1).expand(-1, x.size(1), -1)
         cls_outputs = cls_outputs.unsqueeze(1).expand(-1, x.size(1), -1)
@@ -153,7 +153,7 @@ class SentenceClassifier(torch.nn.Module):
     def forward(self, x, l):
         """ classify given sentences """
         l = l.cpu()
-        self.lstm.flatten_parameters()
+        #self.lstm.flatten_parameters()
 
         x = self.text_embed(x)
         x = pack_padded_sequence(x, l, batch_first=True, enforce_sorted=False)

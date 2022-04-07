@@ -9,8 +9,24 @@ from src.data import Vocabulary
 
 def main():
     path = 'data/CUB-DG/'
-    description, descriptions = make_description(path)
-    
+    description = make_description(path)
+
+    print("Making a vocab file ...")
+    vocab = build_vocab(description)
+    Vocabulary.save(vocab, os.path.join(path, "vocab_nlk.pkl"))
+
+
+
+def make_description(path, trial_seed):
+
+    print("Making description files ...")
+    description = get_data(path)
+
+    train, val, eval = split_description(description)
+    descriptions = merge_descriptions(train, val, eval, trial_seed)
+
+    descriptions.to_pickle(os.path.join(path, 'dggnn_descriptions.pkl'))
+
     # total = len(descriptions)
     # n = int(total * 0.2)
     # keys = list(range(total))
@@ -27,23 +43,7 @@ def main():
     # val = descriptions.iloc[total-2*n:total-n, :]
     # eval = descriptions.iloc[total-n:, :]
 
-    print("Making a vocab file ...")
-    vocab = build_vocab(description)
-    Vocabulary.save(vocab, os.path.join(path, "vocab_nlk.pkl"))
-
-
-
-def make_description(path, trial_seed=0):
-
-    print("Making description files ...")
-    description = get_data(path)
-
-    train, val, eval = split_description(trial_seed, description)
-    descriptions = merge_descriptions(train, val, eval)
-
-    descriptions.to_pickle(os.path.join(path, 'dggnn_descriptions.pkl'))
-
-    return description, descriptions
+    return description
 
 
 def get_data(path):
@@ -70,18 +70,11 @@ def get_data(path):
     return descriptions
 
 
-def seed_hash(num):
-    """ derive an integer hash from all args, for use as a random seed """
-    args_str = str(num)
-    return int(hashlib.md5(args_str.encode("utf-8")).hexdigest(), 16) % (2**31)
-
-
-def split_description(trial_seed, description):
+def split_description(description):
 
     total = len(description)
     n = int(total * 0.2)
     keys = list(range(len(description)))
-    np.random.RandomState(seed_hash(trial_seed)).shuffle(keys)
 
     keys_2 = keys[:n]
     keys_1 = keys[n:2*n]
@@ -94,7 +87,7 @@ def split_description(trial_seed, description):
     return train, val, eval
 
 
-def merge_descriptions(train, val, eval):
+def merge_descriptions(train, val, eval, trial_seed):
     trains = []
     
     num_class = len(set(list(set(train['category_ids'])) + list(set(val['category_ids'])) + list(set(eval['category_ids']))))
@@ -106,7 +99,7 @@ def merge_descriptions(train, val, eval):
             val = val.loc[:, ['images', 'captions']]
             eval = eval.loc[:, ['images', 'captions']]
             for c in range(num_class):
-                tmp = train.loc[train['category_ids']==c, :].sample(frac=1).sort_values(by='category_ids').reset_index(drop=True).loc[:, ['images', 'captions']]
+                tmp = train.loc[train['category_ids']==c, :].sample(frac=1, random_state=trial_seed).sort_values(by='category_ids').reset_index(drop=True).loc[:, ['images', 'captions']]
                 if c == 0:
                     shuffled_train = tmp
                 else:
