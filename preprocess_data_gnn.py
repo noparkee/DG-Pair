@@ -23,12 +23,20 @@ def main():
     #val = descriptions.iloc[keys_1, :]
     #eval = descriptions.iloc[keys_2, :]
 
+    #print(train)
+    #print(val)
+    #print(eval)
+    
+    #print(len(list(set(train.category_ids))))
+    #print(len(list(set(val.category_ids))))
+    #print(len(list(set(eval.category_ids))))
+
     #total = len(descriptions)
     #n = int(total * 0.2)
     #train = descriptions.iloc[:total-2*n, :]
     #val = descriptions.iloc[total-2*n:total-n, :]
     #eval = descriptions.iloc[total-n:, :]
-    
+
     print("Making a vocab file ...")
     vocab = build_vocab(description)
     Vocabulary.save(vocab, os.path.join(path, "vocab_nlk.pkl"))
@@ -36,19 +44,21 @@ def main():
 
 def make_description(path, seed):
     print("Making description files ...")
-    description = get_data(path)
-
-    train, val, eval = split_description(seed, description)
-    descriptions = merge_descriptions(seed, train, val, eval)
-
+    
+    description = get_data(path)                                # image, text 짝을 짓고
+    train, val, eval = split_description(seed, description)     # split을 통해서 test, val, eval 나눔
+    descriptions = merge_descriptions(seed, train, val, eval)   # 나눠진 애들을 가지고 domain 마다 추가
     descriptions.to_pickle(os.path.join(path, 'dggnn_descriptions.pkl'))
+    
     print("Saved description files")
 
     return description, descriptions
 
 
 def get_data(path):
+    ### image-text pair
     category_ids, categories, images, captions = [], [], [], []
+
     caption_path = os.path.join(path, "captions")
     for c, cls in enumerate(sorted(os.listdir(caption_path))):
         if cls.startswith("."): continue

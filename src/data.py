@@ -14,11 +14,13 @@ import nltk
 DOMAIN = ["photo", "cartoon", "art", "paint"]
 
 class CUB_DG_Dataset(torch.utils.data.Dataset):
-    def __init__(self, text_flag):
+    def __init__(self, text_flag, i):       # i == 0: test, i == 1: train, i == 2: val
         self.data_path = "data/CUB-DG"
         
         ### for GCN
-        self.descriptions = pd.read_pickle(os.path.join(self.data_path, "dggnn_descriptions.pkl"))
+        self.descriptions = pd.read_pickle(os.path.join(self.data_path, "cub_dggcn_dataset.pkl"))
+        self.descriptions = self.descriptions.loc[self.descriptions["split"] == i].reset_index(drop=True)
+
         self.data = []
         for dm in DOMAIN:
             self.data.append(self.descriptions[dm + "_images"])
@@ -75,7 +77,6 @@ class CUB_DG_Dataset(torch.utils.data.Dataset):
                     label, \
                      file_names
 
-
     def __len__(self):
         return len(self.descriptions)
 
@@ -88,18 +89,28 @@ def get_datasets_and_iterators(text_flag, eval_flag=False):
     NUM_WORKERS = 16
 
     datasets, iterators_train, iterators_eval, names_eval = [], [], [], []
-    dataset = CUB_DG_Dataset(text_flag)
-    datasets.append(dataset)
+    
+    train_data = CUB_DG_Dataset(text_flag, 1)
+    val_data = CUB_DG_Dataset(text_flag, 2) 
+    test_data = CUB_DG_Dataset(text_flag, 0)
+    
+    datasets.append(train_data)
+    datasets.append(val_data)
+    datasets.append(test_data)
 
-    split2, split1, split0 = split_dataset(dataset)
+    #### loader 다시 수정하자
+
     if not eval_flag:
-        iterators_train.append(InfiniteDataLoader(split0, BATCH_SIZE, NUM_WORKERS, text_flag))
-        iterators_eval.append(torch.utils.data.DataLoader(split1, batch_size=BATCH_SIZE, num_workers=NUM_WORKERS,
-                            collate_fn=collate_fn if text_flag else None, shuffle=False, pin_memory=True))
+        iterators_train.append(InfiniteDataLoader(_SplitDataset(train_data, range(len(train_data)), True), \
+                                                    BATCH_SIZE, NUM_WORKERS, text_flag))
+        iterators_eval.append(torch.utils.data.DataLoader(_SplitDataset(val_data, range(len(val_data)), False), \
+                                                            batch_size=BATCH_SIZE, num_workers=NUM_WORKERS,
+                                                            collate_fn=collate_fn if text_flag else None, shuffle=False, pin_memory=True))
         names_eval.append("validation") 
     
-    iterators_eval.append(torch.utils.data.DataLoader(split2, batch_size=BATCH_SIZE, num_workers=NUM_WORKERS,
-                          collate_fn=collate_fn if text_flag else None, shuffle=False, pin_memory=True))
+    iterators_eval.append(torch.utils.data.DataLoader(_SplitDataset(test_data, range(len(test_data)), False), \
+                                                        batch_size=BATCH_SIZE, num_workers=NUM_WORKERS,
+                                                        collate_fn=collate_fn if text_flag else None, shuffle=False, pin_memory=True))
     names_eval.append("evaluation")
 
     if not eval_flag:
