@@ -51,7 +51,7 @@ def make_description(path, seed):
     
     description = get_data(path)                                # image, text 짝을 짓고
     train, val, test = split_description(seed, description)     # split을 통해서 test, val, eval 나눔
-    descriptions = merge_descriptions(seed, train, val, test)   # 나눠진 애들을 가지고 domain 마다 추가
+    descriptions = merge_descriptions(train, val, test)   # 나눠진 애들을 가지고 domain 마다 추가
     descriptions.to_pickle(os.path.join(path, 'cub_dggcn_dataset.pkl'))
 
     print("Saved the description file")
@@ -127,19 +127,19 @@ def split_description(seed, description):
     return train, val, test
 
 
-def merge_descriptions(seed, train, val, test):
+def merge_descriptions(train, val, test):
     datasets = []
     
     num_class = 200
 
-    for domain in (["photo","cartoon", "art", "paint"]):
+    for i, domain in enumerate((["photo","cartoon", "art", "paint"])):
         if domain == 'photo':
             shuffled_data = train.sort_values(by='categories').reset_index(drop=True)
         else:
             val = val.loc[:, ['images', 'captions']]
             test = test.loc[:, ['images', 'captions']]
             for c in range(num_class):
-                tmp = train.loc[train['category_ids']==c, :].sample(frac=1, random_state=seed).sort_values(by='category_ids').reset_index(drop=True).loc[:, ['images', 'captions']]
+                tmp = train.loc[train['category_ids']==c, :].sample(frac=1, random_state=i).sort_values(by='category_ids').reset_index(drop=True).loc[:, ['images', 'captions']]
                 if c == 0:
                     shuffled_data = tmp
                 else:
@@ -156,6 +156,12 @@ def merge_descriptions(seed, train, val, test):
             descriptions = pd.concat([descriptions, datasets[d]], axis=1)
 
     descriptions = descriptions.iloc[:, [0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 4]]
+    '''
+    Index(['category_ids', 'categories', 'photo_images', 'photo_captions', 'split',
+       'cartoon_images', 'cartoon_captions', 'art_images', 'art_captions',
+       'paint_images', 'paint_captions'],
+      dtype='object')
+    '''
 
     return descriptions
 

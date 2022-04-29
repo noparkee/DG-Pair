@@ -255,12 +255,13 @@ class ErrorReportBot():
         self.channel = '#kauai'
         self.server = 'kauai'
         self.model = args['model_config']
+        self.outputpath = args['output_path']
         self.test_env = args['test_env']
         self.task = task
         self.error = error
 
     def post_error(self):
-        message = '### [ERROR]\n\nServer: %s\nModel: %s\nTestEnv: %s\nTask: %s\n\n\n%s\n###' %(self.server, self.model, str(self.test_env), self.task, self.error)
+        message = '### [ERROR]\n\nServer: %s\nModel: %s\nOutput: %s\nTestEnv: %s\nTask: %s\n\n\n%s\n###' %(self.server, self.model, self.outputpath, str(self.test_env), self.task, self.error)
 
         response = requests.post("https://slack.com/api/chat.postMessage",
             headers={"Authorization": "Bearer "+self.token},

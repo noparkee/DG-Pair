@@ -7,7 +7,8 @@ os.environ["MKL_THREADING_LAYER"] = "GNU"
 import torch
 
 import src.config as config
-from src.data import get_datasets_and_iterators
+#from src.data import get_datasets_and_iterators
+from src.dataloader import get_datasets_and_iterators
 from src.model import get_model
 from src.train import Trainer
 from src.utils import Print, set_seeds, set_output, ErrorReportBot
@@ -49,7 +50,7 @@ def main():
 
     ## Loading datasets
     start = Print(" ".join(['start loading datasets']), output)
-    datasets, iterators_train, iterators_eval, eval_names = get_datasets_and_iterators(text_flag)
+    datasets, iterators_train, iterators_eval, eval_names = get_datasets_and_iterators(args['test_env'], text_flag)
     end = Print('end loading datasets', output)
     Print(" ".join(['elapsed time:', str(end - start)]), output, newline=True)
 
