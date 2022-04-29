@@ -336,18 +336,12 @@ class ERM(torch.nn.Module):
         self.loss_names = ["loss", "cls_loss"]
         self.optimizer = get_optimizer(self.parameters())
 
-    def update(self, minibatch, test_env):
-        minibatch = minibatch[0]
-        xs, y, fs = minibatch
-
-        del xs[test_env]
-        del fs[test_env]
-
-        num_domains = len(xs)
+    def update(self, minibatches, test_env):
+        num_domains = len(minibatches)
 
         cls_loss = 0
-        for i in range(num_domains):
-            x, f = xs[i], fs[i]
+        for minibatch in minibatches:
+            x, y, f = minibatch
 
             image_features = self.featurizer(x)
             cls_outputs = self.classifier(image_features)
