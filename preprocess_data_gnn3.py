@@ -8,7 +8,7 @@ import random
 import nltk
 
 from collections import Counter
-from src.dataloader import Vocabulary
+from src.gcndata import Vocabulary
 
 
 def main():
@@ -19,7 +19,7 @@ def main():
     print("Making a vocab file ...")
 
     vocab = build_vocab(description)
-    Vocabulary.save(vocab, os.path.join(path, "vocab_nlk3.pkl"))
+    Vocabulary.save(vocab, os.path.join(path, "vocab_nlk_gcn.pkl"))
     
     print("Saved the vocab file")
 
@@ -29,13 +29,16 @@ def make_description(path, seed):
     
     description = get_data(path)                                # image, text 짝을 짓고
     data = split_description(seed, description)     # split을 통해서 test, val, eval 나눔
+    data.to_pickle(os.path.join(path, 'cub_dggcn_data.pkl'))
+
     split_info = get_split_index(data)
-    
-    data.to_pickle(os.path.join(path, 'cub_dggcn_dataset3.pkl'))
     with open(os.path.join(path, 'split_info.pkl'),'wb') as f:
         pickle.dump(split_info, f)
-    print("Saved the description file")
-    print("Saved the split_info file")
+
+    gcn_train = make_gcn_description(data)
+    gcn_train.to_pickle(os.path.join(path, 'cub_dggcn_train.pkl'))
+    
+    print("Saved the description files")
 
     return description, data
 
@@ -140,21 +143,45 @@ def split_description(seed, description):
 
 
 def get_split_index(data):
-    split0_train = data[data.split == 0][data.train_flag == 1].index
-    split0_val = data[data.split == 0][data.train_flag == 2].index
-    split1_train = data[data.split == 1][data.train_flag == 1].index
-    split1_val = data[data.split == 1][data.train_flag == 2].index
-    split2_train = data[data.split == 2][data.train_flag == 1].index
-    split2_val = data[data.split == 2][data.train_flag == 2].index
+    split0_train = data.loc[(data['split'] == 0) & (data['train_flag'] == 1)].index
+    split0_val = data.loc[(data['split'] == 0) & (data['train_flag'] == 2)].index
+    split1_train = data.loc[(data['split'] == 1) & (data['train_flag'] == 1)].index
+    split1_val = data.loc[(data['split'] == 1) & (data['train_flag'] == 2)].index
+    split2_train = data.loc[(data['split'] == 2) & (data['train_flag'] == 1)].index
+    split2_val = data.loc[(data['split'] == 2) & (data['train_flag'] == 2)].index
     split_test = data[data.split == -1].index
 
     split_info = {"split0_train": split0_train, "split0_val": split0_val, \
         "split1_train": split1_train, "split1_val": split1_val, \
             "split2_train": split2_train, "split2_val": split2_val, \
                 "split_test": split_test}
+    
+    print(len(split0_train))
+    print(len(split1_train))
+    print(len(split2_val))
+    print(len(split0_val))
+    print(len(split1_val))
+    print(len(split2_val))
+    print(len(split_test))
+    input()
+
 
     return split_info
 
+
+def make_gcn_description(data):       # ['category_ids', 'categories', 'images', 'captions', 'train_flag', 'split']
+    split0_train = data.loc[(data['split'] == 0) & (data['train_flag'] == 1), ["category_ids", "categories", "images", "captions"]]
+    split0_train = split0_train.sort_values(by=['images']).rename(columns={"images": "images0", "captions": "captions0"}).reset_index(drop=True)
+    split1_train = data.loc[(data['split'] == 1) & (data['train_flag'] == 1), ["images", "captions"]]
+    split1_train = split1_train.sort_values(by=['images']).rename(columns={"images": "images1", "captions": "captions1"}).reset_index(drop=True)
+    split2_train = data.loc[(data['split'] == 2) & (data['train_flag'] == 1), ["images", "captions"]]
+    split2_train = split2_train.sort_values(by=['images']).rename(columns={"images": "images2", "captions": "captions2"}).reset_index(drop=True)
+
+    train = pd.concat([split0_train, split1_train], axis=1)
+    train = pd.concat([train, split2_train], axis=1)
+
+    return train
+    
 
 
 def build_vocab(description, threshold=1):

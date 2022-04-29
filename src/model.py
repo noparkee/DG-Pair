@@ -88,13 +88,6 @@ class GVE(torch.nn.Module):
         minibatch = minibatch[0]
         xs, y, tis, tts, ls , mls, fs = minibatch
 
-        del xs[test_env]
-        del tis[test_env]
-        del tts[test_env]
-        del ls[test_env]
-        del mls[test_env]
-        del fs[test_env]
-        
         num_domains = len(xs)
 
         cls_loss, rel_loss, dis_loss, sd_loss, ed_loss = 0, 0, 0, 0, 0
@@ -146,14 +139,7 @@ class GVE(torch.nn.Module):
         return OrderedDict({'loss': loss, 'cls_loss': cls_loss, "rel_loss": rel_loss, "dis_loss": dis_loss, "sd_loss": sd_loss})#, "ed_loss": ed_loss})
 
     def evaluate(self, minibatch, test_env):
-        xs, y, tis, tts, ls , mls, fs = minibatch
-        x = xs[test_env]
-
-        f = fs[test_env]
-
-        #with open("in_evaluate_%s.txt" %str(test_env), "a") as file:
-        #    for fn in f:
-        #        file.write(fn + '\n')
+        x, y, f = minibatch
 
         if self.attn:
             image_before_pooling = self.featurizer(x)
@@ -204,18 +190,9 @@ class GCN(torch.nn.Module):
         minibatch = minibatch[0]
         xs, y, tis, tts, ls , mls, fs = minibatch
 
-        del xs[test_env]
-        del tis[test_env]
-        del tts[test_env]
-        del ls[test_env]
-        del mls[test_env]
-        del fs[test_env]
-        
         num_domains = len(xs)
         
-        remove_idx = random.sample([0, 1, 2, 3, 4, 5], self.n_masking)
-        feat, masking_feat = None, None
-
+        feat = None
         cls_loss, rel_loss, dis_loss, sd_loss, gcn_cls_loss, gcn_feat_loss, pair_loss = 0, 0, 0, 0, 0, 0, 0
         for i in range(num_domains):
             x, ti, tt, l, ml, f = xs[i], tis[i], tts[i], ls[i], mls[i], fs[i]
@@ -312,8 +289,7 @@ class GCN(torch.nn.Module):
         return OrderedDict({'loss': loss, 'cls_loss': cls_loss, "gcn_cls_loss": gcn_cls_loss, "pair_loss": pair_loss})
     
     def evaluate(self, minibatch, test_env):
-        xs, y, tis, tts, ls , mls, fs = minibatch
-        x = xs[test_env]
+        x, y, f = minibatch
 
         image_features = self.featurizer(x)
 
@@ -336,12 +312,15 @@ class ERM(torch.nn.Module):
         self.loss_names = ["loss", "cls_loss"]
         self.optimizer = get_optimizer(self.parameters())
 
-    def update(self, minibatches, test_env):
-        num_domains = len(minibatches)
+    def update(self, minibatch, test_env):
+        minibatch = minibatch[0]
+        xs, y, fs = minibatch
+
+        num_domains = len(xs)
 
         cls_loss = 0
-        for minibatch in minibatches:
-            x, y, f = minibatch
+        for i in range(num_domains):
+            x, f = xs[i], fs[i]
 
             image_features = self.featurizer(x)
             cls_outputs = self.classifier(image_features)
@@ -357,9 +336,8 @@ class ERM(torch.nn.Module):
         return OrderedDict({'loss': loss, 'cls_loss': cls_loss})
 
     def evaluate(self, minibatch, test_env):
-        xs, y, fs = minibatch
-        x = xs[test_env]
-        
+        x, y, f = minibatch
+
         image_features = self.featurizer(x)
         cls_outputs = self.classifier(image_features)
 

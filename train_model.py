@@ -8,7 +8,7 @@ import torch
 
 import src.config as config
 #from src.data import get_datasets_and_iterators
-from src.dataloader import get_datasets_and_iterators
+from src.gcndata import get_datasets_and_iterators
 from src.model import get_model
 from src.train import Trainer
 from src.utils import Print, set_seeds, set_output, ErrorReportBot
@@ -77,7 +77,7 @@ def main():
         
         if (step + 1) % 10 == 0:
             print('# step [{}/{}]'.format(step + 1, N_STEPS), end='\r', file=sys.stderr)
-        if ((step + 1) % CHECKPOINT_FREQ == 0) or (step + 1 == N_STEPS):
+        if step == 0 or ((step + 1) % CHECKPOINT_FREQ == 0) or (step + 1 == N_STEPS):
             for iterator_eval, eval_name in zip(iterators_eval, eval_names):
                 for B, minibatch in enumerate(iterator_eval):
                     trainer.evaluate(minibatch, args['test_env'], eval_name, text_flag=text_flag)
