@@ -76,11 +76,11 @@ def set_output(args, string, test_env):
         output = open(os.path.join(args["output_path"], "%s.txt" % string), "a")
         
         # tensorboard 저장
-        if "eval" not in string:
+        '''if "eval" not in string:
             tb = os.path.join(args["output_path"], "tensorboard_testenv" + str(test_env))
             if not os.path.exists(tb):
                 os.makedirs(tb, exist_ok=True)
-            writer = SummaryWriter(tb)
+            writer = SummaryWriter(tb)'''
 
     return output, writer, save_prefix
 

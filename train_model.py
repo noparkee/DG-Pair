@@ -12,6 +12,7 @@ from src.gcndata import get_datasets_and_iterators
 from src.model import get_model
 from src.train import Trainer
 from src.utils import Print, set_seeds, set_output, ErrorReportBot
+import wandb
 
 import preprocess_data_gnn
 
@@ -70,6 +71,14 @@ def main():
     N_STEPS, CHECKPOINT_FREQ = 5000, 300
     start = Print('start training a model', output)
     trainer.headline("step", model.loss_names, eval_names, output)
+    
+    wandb.init(
+        project='DG+GCN',
+        name=f"{args['output_path'][7:]}_testenv{args['test_env']}",
+        entity='noparkee',
+        )
+    print('Results are now reporting to WANDB (wandb.ai)')
+
     for step in range(N_STEPS):
         ### train
         minibatches = next(iterators_train)
@@ -106,4 +115,3 @@ if __name__ == '__main__':
         err_m = traceback.format_exc()
         err_b = ErrorReportBot(args, 'Training', str(err_m))
         err_b.post_error()
-    # main()

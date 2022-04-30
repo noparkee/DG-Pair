@@ -6,6 +6,7 @@ data code/
 model code/
 pycocoevalcap/
 pycocotools/
+wandb/
 
 **.swp
 **.txt

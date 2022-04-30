@@ -156,16 +156,6 @@ def get_split_index(data):
             "split2_train": split2_train, "split2_val": split2_val, \
                 "split_test": split_test}
     
-    print(len(split0_train))
-    print(len(split1_train))
-    print(len(split2_val))
-    print(len(split0_val))
-    print(len(split1_val))
-    print(len(split2_val))
-    print(len(split_test))
-    input()
-
-
     return split_info
 
 

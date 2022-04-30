@@ -4,6 +4,7 @@ import numpy as np
 from collections import OrderedDict
 
 import torch
+import wandb
 
 from src.utils import Print
 
@@ -76,20 +77,27 @@ class Trainer():
         # logging
         self.logger_train.aggregate()
         self.logger_eval.aggregate()
+        
+        log_dict = dict(self.logger_train.log_dict, **self.logger_eval.log_dict)
 
         if writer is not None:
             log = ["%04d" % step] + self.logger_train.log + self.logger_eval.log
             Print("\t".join(log), output)
-            for k, v in self.logger_train.log_dict.items():
+            
+            # tensorboard update
+            '''for k, v in self.logger_train.log_dict.items():     # loss dict
                 writer.add_scalar(k, v, step)
-            for k, v in self.logger_eval.log_dict.items():
+            for k, v in self.logger_eval.log_dict.items():      # eval dict
                 writer.add_scalar(k, v, step)
-            writer.flush()
-
+            writer.flush()'''
         else:
-            log = [str(step)] + self.logger_eval.log
+            #log = [str(step)] + self.logger_eval.log
+            log = ["%04d" % step] + self.logger_train.log + self.logger_eval.log
             Print("\t".join(log), output)
-
+        
+        #wandb.log(log_dict, step)       # step의 정체..?
+        wandb.log(log_dict)
+        
         self.log_reset()
 
     def log_reset(self):
