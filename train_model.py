@@ -14,7 +14,7 @@ from src.train import Trainer
 from src.utils import Print, set_seeds, set_output, ErrorReportBot
 import wandb
 
-import preprocess_data_gnn
+#import preprocess_data_gnn
 
 
 

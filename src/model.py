@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 from collections import OrderedDict, Counter
 from re import L
 
@@ -178,11 +177,12 @@ class GCN(torch.nn.Module):
 
         ### for contrastive-loss
         self.margin = 10
+        self.sample_num = 4
 
         #self.loss_names = ["loss", "cls_loss", "rel_loss", "dis_loss", "sd_loss"]#, "ed_loss"]
         #self.loss_names = ["loss", "cls_loss", "rel_loss", "dis_loss", "gcn_cls_loss", "gcn_feat_loss"]
-        #self.loss_names = ["loss", "cls_loss", "rel_loss", "dis_loss", "gcn_cls_loss"]
-        self.loss_names = ["loss", "cls_loss", "gcn_cls_loss", "pair_loss"]
+        #self.loss_names = ["loss", "cls_loss", "gcn_cls_loss", "pair_loss"]
+        self.loss_names = ["loss", "cls_loss", "gcn_cls_loss"]
 
         self.optimizer = get_optimizer(self.parameters())
     
@@ -235,20 +235,21 @@ class GCN(torch.nn.Module):
         for i in range(feat.shape[1]):
             random_adj[:, i, i] = 1
         out = self.gcn(feat, adj)       # out.shape = [32, 256]
-        #masking_out = self.gcn(feat, random_adj)
+        masking_out = self.gcn(feat, random_adj)
 
         # 방법 2. feature 자체를 random masking -> GCN2
-        #adj = torch.ones(feat.shape[0], 3, 3).cuda().float()
-        #out = self.gcn(feat, adj)
-        #masking_feat = feat.clone()
-        #for i in range(feat.shape[0]):
-        #    masking_idcs = random.sample(range(3), 1)
-        #    for mi in masking_idcs:
-        #        masking_feat[i, mi] = 0.
-        #masking_out = self.gcn(feat, adj)
+        '''adj = torch.ones(feat.shape[0], 3, 3).cuda().float()
+        out = self.gcn(feat, adj)
+        masking_feat = feat.clone()
+        for i in range(feat.shape[0]):
+            masking_idcs = random.sample(range(3), 1)
+            for mi in masking_idcs:
+                masking_feat[i, mi] = 0.
+        masking_out = self.gcn(feat, adj)'''
 
         # positive / negative pair loss
-        sampled_y = random.sample(y.tolist(), k=4)       # random 하게 4개 선택해서 positive pair일 때와 negative pair일 때 각각 penalty
+        '''
+        sampled_y = random.sample(y.tolist(), k=self.sample_num)       # random 하게 4개 선택해서 positive pair일 때와 negative pair일 때 각각 penalty
         for i in range(len(sampled_y)-1):
             for j in range(i+1, len(sampled_y)):
                 d1 = out[i]
@@ -263,30 +264,31 @@ class GCN(torch.nn.Module):
                     pair_loss += distance
                 else:                                   # negative pair
                     pair_loss += F.relu(self.margin - distance)       # max(0, l)
+        '''
+        
 
         gcn_cls_out = self.gcn_classifier(out)
-        #gcn_cls_out2 = self.gcn_classifier(masking_out)
+        gcn_cls_out2 = self.gcn_classifier(masking_out)
+        gcn_cls_loss = (F.cross_entropy(gcn_cls_out, y) + F.cross_entropy(gcn_cls_out2, y)) #/ 2
 
-        #gcn_cls_loss = (F.cross_entropy(gcn_cls_out, y) + F.cross_entropy(gcn_cls_out2, y)) / 2
-        #gcn_feat_loss = F.mse_loss(gcn_cls_out, gcn_cls_out2)
-
-        gcn_cls_loss = F.cross_entropy(gcn_cls_out, y)
+        ### non-masking
+        #gcn_cls_loss = F.cross_entropy(gcn_cls_out, y)
         
         cls_loss /= num_domains
         #rel_loss /= num_domains
         #dis_loss /= num_domains
 
         #loss = cls_loss + rel_loss + dis_loss + gcn_cls_loss + gcn_feat_loss + sd_loss #+ ed_loss
-        #loss = cls_loss + gcn_cls_loss + gcn_feat_loss
-        loss = cls_loss + gcn_cls_loss + 0.1 * pair_loss
+        #loss = cls_loss + gcn_cls_loss + 0.01 * pair_loss
+        loss = cls_loss + gcn_cls_loss
 
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
         
         #return OrderedDict({'loss': loss, 'cls_loss': cls_loss, "rel_loss": rel_loss, "dis_loss": dis_loss, "gcn_cls_loss": gcn_cls_loss, "gcn_feat_loss": gcn_feat_loss, "sd_loss": sd_loss})#, "ed_loss": ed_loss})
-        #return OrderedDict({'loss': loss, 'cls_loss': cls_loss, "gcn_cls_loss": gcn_cls_loss, "gcn_feat_loss": gcn_feat_loss})
-        return OrderedDict({'loss': loss, 'cls_loss': cls_loss, "gcn_cls_loss": gcn_cls_loss, "pair_loss": pair_loss})
+        #return OrderedDict({'loss': loss, 'cls_loss': cls_loss, "gcn_cls_loss": gcn_cls_loss, "pair_loss": pair_loss})
+        return OrderedDict({'loss': loss, 'cls_loss': cls_loss, "gcn_cls_loss": gcn_cls_loss})
     
     def evaluate(self, minibatch, test_env):
         x, y, f = minibatch
@@ -345,3 +347,88 @@ class ERM(torch.nn.Module):
         total = float(len(x))
 
         return correct, total
+
+
+
+class CORAL(ERM):
+    """ ERM while matching the pair-wise domain feature distributions using mean and covariance difference """
+    def __init__(self, model_cfg, vocab, num_classes):
+        super(CORAL, self).__init__(model_cfg, vocab, num_classes)
+        self.loss_names = ["loss", "cls_loss", "mmd_loss"]
+
+    def update(self, minibatch, test_env):
+        minibatch = minibatch[0]
+        xs, y, fs = minibatch
+
+        num_domains = len(xs)
+        num_domains_pair = (num_domains * (num_domains - 1) / 2)
+        x_mb = []
+
+        loss_dict = OrderedDict({loss_name: 0 for loss_name in self.loss_names})
+        for i in range(num_domains):
+            x, f = xs[i], fs[i]
+
+            x = self.featurizer(x)
+            y_hat = self.classifier(x)
+            loss_dict["cls_loss"] += F.cross_entropy(y_hat, y) / num_domains
+            x_mb.append(x)
+
+        for i in range(num_domains):
+            for j in range(i + 1, num_domains):
+                loss_dict["mmd_loss"] += self.mmd(x_mb[i], x_mb[j]) / num_domains_pair
+
+        for loss_name in self.loss_names:
+            if loss_name != "loss":
+                loss_dict["loss"] += loss_dict[loss_name]
+
+        self.optimizer.zero_grad()
+        loss_dict["loss"].backward()
+        self.optimizer.step()
+
+        return loss_dict
+
+    def mmd(self, x, y):
+        mean_x = x.mean(0, keepdim=True)
+        mean_y = y.mean(0, keepdim=True)
+        cent_x = x - mean_x
+        cent_y = y - mean_y
+        cova_x = (cent_x.t() @ cent_x) / (len(x) - 1)
+        cova_y = (cent_y.t() @ cent_y) / (len(y) - 1)
+
+        mean_diff = (mean_x - mean_y).pow(2).mean()
+        cova_diff = (cova_x - cova_y).pow(2).mean()
+
+        return mean_diff + cova_diff
+
+
+class SD(ERM):
+    """ Gradient starvation: a learning proclivity in neural networks """
+    def __init__(self, model_cfg, vocab, num_classes):
+        super(SD, self).__init__(model_cfg, vocab, num_classes)
+        self.loss_names = ["loss", "cls_loss", "sd_loss"]
+
+    def update(self, minibatch, test_env):
+        minibatch = minibatch[0]
+        xs, y, fs = minibatch
+
+        num_domains = len(xs)
+
+        loss_dict = OrderedDict({loss_name: 0 for loss_name in self.loss_names})
+        for i in range(num_domains):
+            x, f = xs[i], fs[i]
+
+            x = self.featurizer(x)
+            y_hat = self.classifier(x)
+            loss_dict["cls_loss"] += F.cross_entropy(y_hat, y) / num_domains
+            loss_dict["sd_loss"] += 0.1 * (y_hat ** 2).mean() / num_domains
+
+        for loss_name in self.loss_names:
+            if loss_name != "loss":
+                loss_dict["loss"] += loss_dict[loss_name]
+
+        self.optimizer.zero_grad()
+        loss_dict["loss"].backward()
+        self.optimizer.step()
+
+        return loss_dict
+

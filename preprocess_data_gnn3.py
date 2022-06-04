@@ -6,9 +6,12 @@ import pandas as pd
 import pickle
 import random
 import nltk
+import tqdm
 
 from collections import Counter
 from src.gcndata import Vocabulary
+from sentence_transformers import SentenceTransformer
+
 
 
 def main():
@@ -18,8 +21,12 @@ def main():
 
     print("Making a vocab file ...")
 
-    vocab = build_vocab(description)
-    Vocabulary.save(vocab, os.path.join(path, "vocab_nlk_gcn.pkl"))
+    #vocab = build_vocab(description)
+    texts, tokenized_texts, vocab = build_vocab(description)
+    #Vocabulary.save(vocab, os.path.join(path, "vocab_nlk_gcn.pkl"))
+
+    print("Embedding texts ...")
+    embed_texts(path, texts, tokenized_texts, vocab)
     
     print("Saved the vocab file")
 
@@ -29,14 +36,14 @@ def make_description(path, seed):
     
     description = get_data(path)                                # image, text 짝을 짓고
     data = split_description(seed, description)     # split을 통해서 test, val, eval 나눔
-    data.to_pickle(os.path.join(path, 'cub_dggcn_data.pkl'))
+    #data.to_pickle(os.path.join(path, 'cub_dggcn_data.pkl'))
 
     split_info = get_split_index(data)
-    with open(os.path.join(path, 'split_info.pkl'),'wb') as f:
-        pickle.dump(split_info, f)
+    #with open(os.path.join(path, 'split_info.pkl'),'wb') as f:
+    #    pickle.dump(split_info, f)
 
     gcn_train = make_gcn_description(data)
-    gcn_train.to_pickle(os.path.join(path, 'cub_dggcn_train.pkl'))
+    #gcn_train.to_pickle(os.path.join(path, 'cub_dggcn_train.pkl'))
     
     print("Saved the description files")
 
@@ -174,7 +181,7 @@ def make_gcn_description(data):       # ['category_ids', 'categories', 'images',
     
 
 
-def build_vocab(description, threshold=1):
+'''def build_vocab(description, threshold=1):
     """Build a simple vocabulary wrapper."""
    
     counter = Counter()
@@ -194,7 +201,67 @@ def build_vocab(description, threshold=1):
 
     for word in words:
         vocab.add_word(word)
-    return vocab
+    return vocab'''
+
+
+
+def embed_texts(path, texts, tokenized_texts, vocab):
+    model = SentenceTransformer('clip-ViT-B-32')
+
+    texts_s, texts_w, lengths = [], [], []
+    for text in texts:
+        try:
+            e = model.encode(text)
+        except:
+            e = model.encode(".".join(text.split(".")[:-2]))
+        texts_s.append(e)
+
+    MaxLength = 64 if ("CUB-DG" in path or "domain_net" in path) else 32
+    for text in tokenized_texts:
+        lengths.append(len(text) + 1)
+        if len(text) < MaxLength - 2:
+            text += ["<end>"] * (MaxLength - 2 - len(text))
+        elif len(text) > MaxLength - 2:
+            text = text[:MaxLength - 2]
+        texts_w.append(np.array([vocab(vocab.start_token)] + [vocab(word) for word in text] + [vocab(vocab.end_token)]))
+
+    if not os.path.exists(os.path.join(path, "texts/")):
+        os.makedirs(os.path.join(path, "texts/"), exist_ok=True)
+        np.save(os.path.join(path, "texts", "texts_s.npy"), np.stack(texts_s, 0))
+        np.save(os.path.join(path, "texts", "texts_w.npy"), np.stack(texts_w, 0))
+        np.save(os.path.join(path, "texts", "lengths.npy"), np.stack(lengths, 0))
+
+def build_vocab(description, threshold=1):
+    """Build a simple vocabulary wrapper."""
+    
+    texts, tokenized_texts = [], []
+    counter = Counter()
+    for i in range(len(description)):
+        for line in description['captions'][i]:
+            ###
+            texts.append(line)
+            tokens = nltk.tokenize.word_tokenize(line.strip().lower())
+
+            #if len(line) < 10: continue
+            #tokens = nltk.tokenize.word_tokenize(line.strip().lower())
+            
+            ###
+            tokenized_texts.append(tokens)
+            counter.update(tokens)
+    
+    words = [word for word, cnt in counter.items() if cnt >= threshold]
+
+    vocab = Vocabulary()
+    vocab.add_word('<pad>')
+    vocab.add_word('<start>')
+    vocab.add_word('<end>')
+    vocab.add_word('<unk>')
+
+    for word in words:
+        vocab.add_word(word)
+
+    return texts, tokenized_texts, vocab
+
 
 
 if __name__ == "__main__":
