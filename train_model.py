@@ -2,6 +2,7 @@ import os
 import sys
 import argparse
 import traceback
+from nbformat import write
 os.environ["MKL_THREADING_LAYER"] = "GNU"
 
 import torch
@@ -72,12 +73,13 @@ def main():
     start = Print('start training a model', output)
     trainer.headline("step", model.loss_names, eval_names, output)
     
-    wandb.init(
-        project='DG+GCN',
-        name=f"{args['output_path'][7:]}_testenv{args['test_env']}",
-        entity='noparkee',
-        )
-    print('Results are now reporting to WANDB (wandb.ai)')
+    if not "tmp" in args['output_path']:
+        wandb.init(
+            project='DG+GCN',
+            name=f"{args['output_path'][7:]}_testenv{args['test_env']}",
+            entity='noparkee',
+            )
+        print('Results are now reporting to WANDB (wandb.ai)')
 
     for step in range(N_STEPS):
         ### train
@@ -94,7 +96,7 @@ def main():
                 print(' ' * 150, end='\r', file=sys.stderr)
 
             #trainer.save_model(step + 1, save_prefix, args["test_env"])
-            trainer.log(step + 1, output, writer)
+            trainer.log(args, step + 1, output, writer)
 
     # 마지막 하나만 저장
     trainer.save_model(step + 1, save_prefix, args["test_env"])

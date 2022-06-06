@@ -73,7 +73,7 @@ class Trainer():
 
         Print("\t".join(headline), output)
 
-    def log(self, step, output, writer, save_prefix=None):
+    def log(self, args, step, output, writer, save_prefix=None):
         # logging
         self.logger_train.aggregate()
         self.logger_eval.aggregate()
@@ -96,7 +96,8 @@ class Trainer():
             Print("\t".join(log), output)
         
         #wandb.log(log_dict, step)       # step의 정체..?
-        wandb.log(log_dict)
+        if not "tmp" in args["output_path"]:
+            wandb.log(log_dict)
         
         self.log_reset()
 

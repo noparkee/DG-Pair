@@ -1,5 +1,6 @@
 from collections import OrderedDict, Counter
 from re import L
+from jax import mask
 
 import torch
 from torch._C import device
@@ -155,7 +156,7 @@ class GVE(torch.nn.Module):
 
 
 class GCN(torch.nn.Module):
-    def __init__(self, model_cfg, vocab, num_classes, n_masking=2):
+    def __init__(self, model_cfg, vocab, num_classes):
         super(GCN, self).__init__()
         
         self.featurizer = nn.DataParallel(ResNet(model_cfg.attn))
@@ -170,9 +171,7 @@ class GCN(torch.nn.Module):
         #self.txt_perceptron = nn.Linear(embed_size, perceptron_size)
         
         ### for gcn
-        self.n_masking = n_masking
-        self.gcn = GCNNet(n_block=1, n_layer=1, in_dim=1024, hidden_dim=512, out_dim=256, n_feat=3)
-
+        self.gcn = GCNNet(n_block=1, n_layer=1, in_dim=1024, hidden_dim=512, out_dim=256, n_feat=6)
         self.gcn_classifier = nn.Linear(256, num_classes)   # gcn의 out_dim
 
         ### for contrastive-loss
@@ -182,7 +181,7 @@ class GCN(torch.nn.Module):
         #self.loss_names = ["loss", "cls_loss", "rel_loss", "dis_loss", "sd_loss"]#, "ed_loss"]
         #self.loss_names = ["loss", "cls_loss", "rel_loss", "dis_loss", "gcn_cls_loss", "gcn_feat_loss"]
         #self.loss_names = ["loss", "cls_loss", "gcn_cls_loss", "pair_loss"]
-        self.loss_names = ["loss", "cls_loss", "gcn_cls_loss"]
+        self.loss_names = ["loss", "cls_loss", "pair_loss", "gcn_feat_loss"]
 
         self.optimizer = get_optimizer(self.parameters())
     
@@ -192,7 +191,7 @@ class GCN(torch.nn.Module):
 
         num_domains = len(xs)
         
-        feat = None
+        features = None
         cls_loss, rel_loss, dis_loss, sd_loss, gcn_cls_loss, gcn_feat_loss, pair_loss = 0, 0, 0, 0, 0, 0, 0
         for i in range(num_domains):
             x, ti, tt, l, ml, f = xs[i], tis[i], tts[i], ls[i], mls[i], fs[i]
@@ -219,68 +218,121 @@ class GCN(torch.nn.Module):
             #txt_features = self.txt_perceptron(torch.squeeze(states1[0]))   # (32, perceptron_size)
 
             ### make gcn features without maksing
-            if feat == None:
-                #feat = img_features
-                feat = img_features.unsqueeze(dim=1)
-            #if feat.shape == img_features.shape:
-            #    feat = torch.stack([feat, txt_features], dim=1)
+            if features == None:
+                features = img_features.unsqueeze(dim=1)
             else:
-                feat = torch.cat([feat, torch.unsqueeze(img_features, dim=1)], dim=1)
-                #feat = torch.cat([feat, torch.unsqueeze(txt_features, dim=1)], dim=1)
+                features = torch.cat([features, torch.unsqueeze(img_features, dim=1)], dim=1)
 
-        # feat.shape = [32, n_features, 1024]
+        ### reshape features (2개 이상의 class 씩 묶을 수 있게)
+        #print(features[1][0])
+        reshape_features = features.reshape(features.shape[0]//2, -1, features.shape[2])        # [16, 6, 1024]
+        #print(features[0][3])
+        
+        ### make adjacent matrix
+        adj = torch.ones(reshape_features.shape[0], reshape_features.shape[1], reshape_features.shape[1]).cuda().float()
+        for i in range(len(reshape_features)):
+            if y[2*i] != y[2*i + 1]:
+                adj[i][0][4] = 0
+                adj[i][0][5] = 0
+                adj[i][1][3] = 0
+                adj[i][1][5] = 0
+                adj[i][2][3] = 0
+                adj[i][2][4] = 0
+
+                adj[i][4][0] = 0
+                adj[i][5][0] = 0
+                adj[i][3][1] = 0
+                adj[i][5][1] = 0
+                adj[i][3][2] = 0
+                adj[i][4][2] = 0
+        
+        masking_adj = torch.randint(2, (adj.shape)).cuda().float()
+        for i in range(reshape_features.shape[1]):
+            masking_adj[:, i, i] = 1
+        
+        ##########################################################################################
+        # features.shape = [32, n_features, 1024]
         # 방법 1. adjaceney matrix에 random masking -> GCN
-        adj = torch.ones(feat.shape[0], 3, 3).cuda().float()
-        random_adj = torch.randint(2, (feat.shape[0], 3, 3)).cuda().float()
-        for i in range(feat.shape[1]):
-            random_adj[:, i, i] = 1
-        out = self.gcn(feat, adj)       # out.shape = [32, 256]
-        masking_out = self.gcn(feat, random_adj)
+        #adj = torch.ones(features.shape[0], 3, 3).cuda().float()
+        #random_adj = torch.randint(2, (features.shape[0], 3, 3)).cuda().float()
+        #for i in range(features.shape[1]):
+        #    random_adj[:, i, i] = 1
+        #gcn_features = self.gcn(features, adj)                       # gcn_features.shape = [32, 256]
+        #masking_gcn_features = self.gcn(features, random_adj)        # masking_gcn_features.shape = [32, 256]
 
         # 방법 2. feature 자체를 random masking -> GCN2
-        '''adj = torch.ones(feat.shape[0], 3, 3).cuda().float()
-        out = self.gcn(feat, adj)
-        masking_feat = feat.clone()
-        for i in range(feat.shape[0]):
-            masking_idcs = random.sample(range(3), 1)
-            for mi in masking_idcs:
-                masking_feat[i, mi] = 0.
-        masking_out = self.gcn(feat, adj)'''
+        #adj = torch.ones(features.shape[0], 3, 3).cuda().float()
+        #gcn_features = self.gcn(features, adj)
+        #masking_feat = features.clone()
+        #for i in range(features.shape[0]):
+        #    masking_idcs = random.sample(range(3), 1)
+        #    for mi in masking_idcs:
+        #        masking_feat[i, mi] = 0.
+        #masking_gcn_features = self.gcn(features, adj)
+        ##########################################################################################
 
-        # positive / negative pair loss
-        '''
-        sampled_y = random.sample(y.tolist(), k=self.sample_num)       # random 하게 4개 선택해서 positive pair일 때와 negative pair일 때 각각 penalty
-        for i in range(len(sampled_y)-1):
-            for j in range(i+1, len(sampled_y)):
-                d1 = out[i]
-                d2 = out[j]
-                d1_var_mean = torch.var_mean(d1)
-                d2_var_mean = torch.var_mean(d2)
-                d1 = ((d1 - d1_var_mean[1]) / d1_var_mean[0]**(0.5)).reshape(1, -1)
-                d2 = ((d2 - d2_var_mean[1]) / d2_var_mean[0]**(0.5)).reshape(1, -1)
+        gcn_features = self.gcn(reshape_features, adj)
+        maksing_gcn_features = self.gcn(reshape_features, masking_adj)
+        gcn_feat_loss = F.mse_loss(maksing_gcn_features, gcn_features)
 
-                distance = F.pairwise_distance(d1, d2)
-                if sampled_y[i] == sampled_y[j]:        # positive pair
-                    pair_loss += distance
-                else:                                   # negative pair
-                    pair_loss += F.relu(self.margin - distance)       # max(0, l)
-        '''
-        
-
-        gcn_cls_out = self.gcn_classifier(out)
-        gcn_cls_out2 = self.gcn_classifier(masking_out)
-        gcn_cls_loss = (F.cross_entropy(gcn_cls_out, y) + F.cross_entropy(gcn_cls_out2, y)) #/ 2
-
-        ### non-masking
+        #gcn_cls_out = self.gcn_classifier(gcn_features)
         #gcn_cls_loss = F.cross_entropy(gcn_cls_out, y)
+
+        '''
+        ### applying pair loss to gcn features
+        random_idx = random.sample(range(32), 4)
+        for i in range(len(random_idx)-1):
+            for j in range(i+1, len(random_idx)):
+                g1 = gcn_features[i]
+                g2 = gcn_features[j]
+                
+                # normalization
+                g1_var_mean = torch.var_mean(g1)
+                g2_var_mean = torch.var_mean(g2)
+                g1 = ((g1 - g1_var_mean[1]) / g1_var_mean[0]**(0.5)).reshape(1, -1)
+                g2 = ((g2 - g2_var_mean[1]) / g2_var_mean[0]**(0.5)).reshape(1, -1)
+                
+                diff = F.mse_loss(g1, g2)
+
+                if y[random_idx[i]] != y[random_idx[j]]:        # negative-pair
+                    pair_loss += F.relu(self.margin - diff)
+                else:                                           # positive-pair
+                    pair_loss += diff
+        print(pair_loss)'''
+
+        random_idx = random.sample(range(32), 4)
+        random_feat = features[random_idx]
+        random_feat = (random_feat - random_feat.mean(dim=0)) / random_feat.var(dim=0)**0.5     # normalization     [4, 3, 1024] - class마다 정규화
+
+        ### applying pair loss to image features
+        # positive loss
+        for i in range(len(random_idx)):
+            diff = F.mse_loss(random_feat[i][0], random_feat[i][1])
+            diff += F.mse_loss(random_feat[i][0], random_feat[i][2])
+            diff += F.mse_loss(random_feat[i][1], random_feat[i][2])
+            pair_loss += diff
+        # negative loss
+        for i in range(len(random_idx)-1):
+            for j in range(i+1, len(random_idx)):
+                if y[random_idx[i]] != y[random_idx[j]]:
+                    diff = F.mse_loss(random_feat[i][0], random_feat[j][0])
+                    diff += F.mse_loss(random_feat[i][0], random_feat[j][1])
+                    diff += F.mse_loss(random_feat[i][0], random_feat[j][2])
+                    diff += F.mse_loss(random_feat[i][1], random_feat[j][0])
+                    diff += F.mse_loss(random_feat[i][1], random_feat[j][1])
+                    diff += F.mse_loss(random_feat[i][1], random_feat[j][2])
+                    diff += F.mse_loss(random_feat[i][2], random_feat[j][0])
+                    diff += F.mse_loss(random_feat[i][2], random_feat[j][1])
+                    diff += F.mse_loss(random_feat[i][2], random_feat[j][2])
+                    pair_loss += F.relu(self.margin - diff)
         
         cls_loss /= num_domains
+        pair_loss *= 1e-1
+        gcn_feat_loss *= 1e2
         #rel_loss /= num_domains
         #dis_loss /= num_domains
 
-        #loss = cls_loss + rel_loss + dis_loss + gcn_cls_loss + gcn_feat_loss + sd_loss #+ ed_loss
-        #loss = cls_loss + gcn_cls_loss + 0.01 * pair_loss
-        loss = cls_loss + gcn_cls_loss
+        loss = cls_loss + pair_loss + gcn_feat_loss
 
         self.optimizer.zero_grad()
         loss.backward()
@@ -288,7 +340,7 @@ class GCN(torch.nn.Module):
         
         #return OrderedDict({'loss': loss, 'cls_loss': cls_loss, "rel_loss": rel_loss, "dis_loss": dis_loss, "gcn_cls_loss": gcn_cls_loss, "gcn_feat_loss": gcn_feat_loss, "sd_loss": sd_loss})#, "ed_loss": ed_loss})
         #return OrderedDict({'loss': loss, 'cls_loss': cls_loss, "gcn_cls_loss": gcn_cls_loss, "pair_loss": pair_loss})
-        return OrderedDict({'loss': loss, 'cls_loss': cls_loss, "gcn_cls_loss": gcn_cls_loss})
+        return OrderedDict({'loss': loss, 'cls_loss': cls_loss, "pair_loss": pair_loss, "gcn_feat_loss": gcn_feat_loss})
     
     def evaluate(self, minibatch, test_env):
         x, y, f = minibatch
