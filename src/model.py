@@ -155,7 +155,7 @@ class GVE(torch.nn.Module):
         return correct, total
 
 
-class GCN(torch.nn.Module):
+class PAIR(torch.nn.Module):
     def __init__(self, model_cfg, vocab, num_classes):
         super(GCN, self).__init__()
         
@@ -353,6 +353,78 @@ class GCN(torch.nn.Module):
         total = float(len(x))
         
         return correct, total
+
+
+
+class StyleFeature(torch.nn.Module):
+    def __init__(self, model_cfg, vocab, num_classes):
+        super(StyleFeature, self).__init__()
+        self.featurizer = nn.DataParallel(ResNet(model_cfg.attn))       # output.shape = (B, 2048)
+        self.classifier = nn.Linear(self.featurizer.module.n_outputs, num_classes)
+
+        ###
+        # DG: source domain은 3개
+        self.style_featurizer = nn.Sequential(
+                                            nn.Linear(self.featurizer.module.n_outputs, self.featurizer.module.n_outputs // 2),
+                                            nn.ReLU(),
+                                            nn.Linear(self.featurizer.module.n_outputs // 2, self.featurizer.module.n_outputs))
+        self.style_classifier = nn.Linear(self.featurizer.module.n_outputs, 3)
+        ### linear extractor 말고 conv...
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.loss_names = ["loss", "cls_loss", "style_cls_loss"]
+        self.optimizer = get_optimizer(self.parameters())
+
+    def update(self, minibatch, test_env):
+        minibatch = minibatch[0]
+        xs, y, fs = minibatch
+
+        num_domains = len(xs)
+        style_y = []
+        cls_loss, style_cls_loss = 0, 0
+        for i in range(num_domains):
+            x, f = xs[i], fs[i]
+            s_y = [i] * (x.shape[0])
+            #style_y += s_y
+            s_y = torch.tensor(s_y).to(self.device)
+
+            image_features = self.featurizer(x)
+            style_features = self.style_featurizer(image_features)
+
+            style_cls_outputs = self.style_classifier(style_features)
+            style_cls_loss += F.cross_entropy(style_cls_outputs, s_y)
+
+            cls_outputs = self.classifier(image_features-style_features)    # only use class feature
+            cls_loss += F.cross_entropy(cls_outputs, y)
+        
+        #feature_y = torch.tensor(feature_y)
+        
+
+        cls_loss /= num_domains
+        style_cls_loss /= num_domains
+        loss = cls_loss + style_cls_loss
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        
+        return OrderedDict({'loss': loss, 'cls_loss': cls_loss, "style_cls_loss": style_cls_loss})
+
+    def evaluate(self, minibatch, test_env):
+        x, y, f = minibatch
+
+        image_features = self.featurizer(x)
+        style_features = self.style_featurizer(image_features)
+
+        cls_outputs = self.classifier(image_features-style_features)
+
+        correct = (cls_outputs.argmax(1).eq(y).float()).sum().item()
+        total = float(len(x))
+
+        return correct, total
+
+
 
 
 ###

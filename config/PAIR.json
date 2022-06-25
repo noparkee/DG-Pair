@@ -1,5 +1,5 @@
 {
-  "name": "GCN",
+  "name": "PAIR",
   "explainer_embed_size": 1024,
   "explainer_hidden_size": 1024,
   "sc_embed_size": 1024,

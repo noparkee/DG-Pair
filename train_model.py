@@ -43,7 +43,7 @@ def main():
         return
     print("test_env: "+ str(args['test_env']))
 
-    text_flag = (args["model_config"].find('GVE') != -1) or (args["model_config"].find('GCN') != -1)
+    text_flag = (args["model_config"].find('GVE') != -1) or (args["model_config"].find('PAIR') != -1)
     print('text_flag: ' + str(bool(model_cfg.text_feature)))
 
     ## make description files

@@ -1,0 +1,10 @@
+{
+    "name": "StyleFeature",
+    "explainer_embed_size": 1024,
+    "explainer_hidden_size": 1024,
+    "sc_embed_size": 1024,
+    "sc_hidden_size": 1024,
+    "perceptron_size": 1024,
+    "attn": 0, 
+    "text_feature": 0
+  }
